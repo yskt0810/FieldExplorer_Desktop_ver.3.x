@@ -1,0 +1,461 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx" creationComplete="onCC();"
+				 showCloseButton="true" layout="absolute" width="800" height="600"
+				 close="closePopup(event)" chromeColor="#CCCCCC" borderVisible="false">
+	<fx:Declarations>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+	</fx:Declarations>
+	<fx:Metadata>
+		[Event(name="Complete", type="fe.core.networks.MyFolderMessageEvent")]
+	</fx:Metadata>
+	<fx:Script>
+		<![CDATA[
+			import mx.controls.Alert;
+			import mx.events.CloseEvent;
+			import mx.managers.PopUpManager;
+			
+			import fe.core.setup.FEDatabase;
+			import fe.core.setup.FEDirectory;
+			import fe.core.utils.ReadXMLFile;
+			import fe.core.utils.WriteXMLFile;
+			
+			import org.hamster.dropbox.DropboxClient;
+			import org.hamster.dropbox.DropboxConfig;
+			import org.hamster.dropbox.DropboxEvent;
+			import org.hamster.dropbox.models.AccountInfo;
+			import org.hamster.dropbox.models.DropboxFile;
+			　
+			[Bindable] public var dropboxAPI:DropboxClient;
+			[Bindable] public var html:HTMLLoader;
+			private var MYFOLDER_FLAG:Boolean;
+			private var API_KEY:String = "4cjtvkztyvh0v8m";
+			private var API_SECRET:String = "xr7ix0a8ej7tm7a";
+			private var REQ_KEY:String;
+			private var REQ_SECRET:String;
+			private var ACC_KEY:String;
+			private var ACC_SECRET:String;
+			private var MYFOLDER_NAME:String = "";
+			private var mydbfile:DropboxFile = new DropboxFile();
+			
+			
+			// Xボタンを押してポップアップをクローズ
+			private function closePopup(e:CloseEvent):void{
+				PopUpManager.removePopUp(this);
+			}
+			
+			private function commitClose():void{
+				var e:CloseEvent = new CloseEvent(CloseEvent.CLOSE, false, false);
+				dispatchEvent(e);
+			}
+			
+			private function onCC():void{
+				var readSetting:ReadXMLFile = new ReadXMLFile();
+				var networkSetting:XML = new XML();
+				var settingFile:File = File.applicationStorageDirectory.resolvePath("networksetting.xml");
+				
+				if(settingFile.exists){
+					networkSetting = readSetting.ReadMethod(settingFile);
+					ACC_KEY = networkSetting.acc_key;
+					ACC_SECRET = networkSetting.acc_secret;
+					REQ_KEY = networkSetting.req_key;
+					REQ_SECRET = networkSetting.req_secret;
+					MYFOLDER_NAME = networkSetting.MyFolderName;
+					
+					if(ACC_KEY != "" && ACC_SECRET != "" && REQ_KEY != "" && REQ_SECRET != ""){
+						var config:DropboxConfig = new DropboxConfig(API_KEY,API_SECRET);
+						config.accessTokenKey = ACC_KEY;
+						config.accessTokenSecret = ACC_SECRET;
+						config.requestTokenKey = REQ_KEY;
+						config.requestTokenSecret = REQ_SECRET;
+						dropboxAPI = new DropboxClient(config);
+						
+						if(config.accessTokenKey && config.accessTokenSecret){
+							
+							SetMyFolderInformation();
+							
+						}
+					}
+				}
+			}
+			
+			private function SetMyFolderInformation():void{
+				currentState = "d";
+				accountInfo();
+				CheckMyFolderExists(MYFOLDER_NAME);
+				
+			}
+			
+			private function StartRegistration(e:Event):void{
+				currentState = "b";
+				var config:DropboxConfig = new DropboxConfig(API_KEY,API_SECRET);
+				dropboxAPI = new DropboxClient(config);
+				dropboxAPI.requestToken();
+				var handler:Function = function(evt:DropboxEvent):void{
+					dropboxAPI.removeEventListener(DropboxEvent.REQUEST_TOKEN_RESULT,handler);
+					var obj:Object = evt.resultObject;
+					REQ_KEY = obj.key;
+					REQ_SECRET = obj.secret;
+					html = new HTMLLoader();
+					OAuthContainer.location = dropboxAPI.authorizationUrl;
+					
+				};
+				
+				dropboxAPI.addEventListener(DropboxEvent.REQUEST_TOKEN_RESULT,handler);
+				if(!dropboxAPI.hasEventListener(DropboxEvent.REQUEST_TOKEN_FAULT)){
+					dropboxAPI.addEventListener(DropboxEvent.REQUEST_TOKEN_FAULT,faultHandler);
+				}
+
+				
+			}
+			
+			private function locationChangeHandler(e:Event):void{
+				var auth_sumited_url:String = "https://www.dropbox.com/1/oauth/authorize_submit";
+				if(OAuthContainer.location == auth_sumited_url){
+					getAccessToken.visible = true;
+				}else{
+					getAccessToken.visible = false;
+				}
+			}
+			
+			private function faultHandler(evt:Event):void{
+				trace((evt as Object).resultObject.toString());
+				Alert.show((evt as Object).resultObject.toString());
+			}
+			
+			private function SetUpAccessToken(e:Event):void{
+				currentState = "c";
+				dropboxAPI.accessToken();
+				var handler:Function = function(evt:DropboxEvent):void{
+					dropboxAPI.removeEventListener(DropboxEvent.ACCESS_TOKEN_RESULT,handler);
+					var obj:Object = evt.resultObject;
+					ACC_KEY = obj.key;
+					ACC_SECRET = obj.secret;
+					
+					WriteSetting();
+					ConnectDropbox();
+				};
+				dropboxAPI.addEventListener(DropboxEvent.ACCESS_TOKEN_RESULT,handler);
+				if(!dropboxAPI.hasEventListener(DropboxEvent.ACCESS_TOKEN_FAULT)){
+					dropboxAPI.addEventListener(DropboxEvent.ACCESS_TOKEN_FAULT,faultHandler);
+				}
+			}
+			
+			private function ConnectDropbox():void{
+				var config:DropboxConfig = new DropboxConfig(API_KEY,API_SECRET);
+				config.accessTokenKey = ACC_KEY;
+				config.accessTokenSecret = ACC_SECRET;
+				config.requestTokenKey = REQ_KEY;
+				config.requestTokenSecret = REQ_SECRET;
+				dropboxAPI = new DropboxClient(config);
+				
+				if(config.accessTokenKey && config.accessTokenSecret){
+					accountInfo();
+				}
+			}
+			
+			public function accountInfo():void{
+				dropboxAPI.accountInfo();
+				var handler:Function = function(evt:DropboxEvent):void{
+					dropboxAPI.removeEventListener(DropboxEvent.ACCESS_TOKEN_RESULT,handler);
+					var accountInfos:AccountInfo = AccountInfo(evt.resultObject);
+					var current:Number = xRoundDown(((Number(accountInfos['quotaInfo_normal']) / 1024) / 1024) / 1024,2);
+					var available:Number = xRoundDown(((Number(accountInfos['quotaInfo_quota']) / 1024) / 1024) / 1024,2);
+					var shared:Number = xRoundDown(((Number(accountInfos['quotaInfo_shared']) / 1024) / 1024) / 1024,2);
+					if(currentState == 'c'){
+						namae.text = accountInfos['displayName'];
+						email.text = accountInfos['email'];
+						
+						qi_normal.text = String(current) + " GB"
+						qi_quota.text = String(available) + " GB";
+						qi_shared.text = String(shared) + " GB";
+					}else if(currentState == 'd'){
+						info_namae.text = accountInfos['displayName'];
+						info_email.text = accountInfos['email'];
+						info_qi_normal.text = String(current) + " GB"
+						info_qi_quota.text = String(available) + " GB";
+						info_qi_shared.text = String(shared) + " GB";
+					}
+					
+				};
+				dropboxAPI.addEventListener(DropboxEvent.ACCOUNT_INFO_RESULT,handler);
+				if(!dropboxAPI.hasEventListener(DropboxEvent.ACCOUNT_INFO_FAULT)){
+					dropboxAPI.addEventListener(DropboxEvent.ACCOUNT_INFO_FAULT,faultHandler);
+				}
+					
+			}
+			
+			private function xRoundDown(nValue:Number,nDigits:int):Number{
+				var nMultiplier:Number = Math.pow(10,nDigits);
+				var nResult:Number = Math.floor(nValue * nMultiplier) / nMultiplier;
+				return nResult;
+			}
+			
+			public function WriteSetting():void{
+				var writeXML:WriteXMLFile = new WriteXMLFile();
+				var NetworkSettingFile:File = File.applicationStorageDirectory.resolvePath("networksetting.xml");
+				trace(NetworkSettingFile.nativePath);
+				var OutputString:String = '<Dropbox> \n';
+				OutputString += '<api_key>' + API_KEY + '</api_key>\n';
+				OutputString += '<api_secret>' + API_SECRET + '</api_secret>\n';
+				OutputString += '<acc_key>' + ACC_KEY + '</acc_key>\n';
+				OutputString += '<acc_secret>' + ACC_SECRET + '</acc_secret>\n';
+				OutputString += '<req_key>' + REQ_KEY + '</req_key>\n';
+				OutputString += '<req_secret>' + REQ_SECRET + '</req_secret>\n';
+				OutputString += '<MyFolderName>' + MYFOLDER_NAME + '</MyFolderName>\n';
+				OutputString += '</Dropbox>\n';
+				
+				writeXML.WriteMethod(OutputString,NetworkSettingFile);
+					
+			}
+			
+			public function CheckMyFolderExists(MyFolderName:String):void{
+				this.addEventListener(Event.COMPLETE,MyFolderExistCheck);
+				SearchDir(MyFolderName);
+			}
+			
+			public function MyFolderExistCheck(e:Event):void{
+				this.removeEventListener(Event.COMPLETE,MyFolderExistCheck);
+				if(MYFOLDER_FLAG){
+					info_my_folder.text = "/" + MYFOLDER_NAME;
+					var MyShareFolder:MyDropboxDirectory = new MyDropboxDirectory(dropboxAPI,MYFOLDER_NAME);
+					var MyFolderConfig:MyDropboxDB = new MyDropboxDB(dropboxAPI,MyShareFolder);
+					info_my_config.text = MyFolderConfig.MyDB;
+					info_my_data.text = mydbfile['size'];
+					
+				}else{
+					info_my_folder.text = "Your folder is not defined on the Dorpbox.";
+					
+				}
+				
+			}
+			
+			public function SetupMyFolder(e:Event):void{
+
+				this.addEventListener(Event.COMPLETE,CheckMyFolder);
+				if(MyFolderName.text != ""){
+					SearchDir("FE_" + MyFolderName.text);			
+				}else{
+					message.text = "Please input the folder name.";
+				}
+
+				
+			}
+			
+			public function CheckMyFolder(e:Event):void{
+				trace(MYFOLDER_FLAG);
+				this.removeEventListener(Event.COMPLETE,CheckMyFolder);
+				if(MYFOLDER_FLAG){
+					message.text = "Folder " + MyFolderName.text + " has already used. Please use other folder name. ";
+					//MYFOLDER_NAME = "FE_" + MyFolderName.text;
+					//WriteSetting();
+					
+				}else{
+					MYFOLDER_NAME = "FE_" + MyFolderName.text;
+					CreateFolder(MYFOLDER_NAME);
+					CreateConfigFolder(MYFOLDER_NAME);
+					CreateDataFolder(MYFOLDER_NAME);
+					WriteSetting();
+					var MyShareFolder:MyDropboxDirectory = new MyDropboxDirectory(dropboxAPI,MYFOLDER_NAME);
+					var MyFolderConfig:MyDropboxDB = new MyDropboxDB(dropboxAPI,MyShareFolder);
+					MyFolderConfig.SearchDBFile();
+					
+					
+					message.text = "Folder " + MyFolderName.text + " has successfully created as to share your files via Dropbox. ";
+					SetMyFolderButton.enabled = false;
+					MyFolderName.editable = false;
+				}
+				
+				
+			}
+			
+			public function SearchDir(FolderName:String):void{
+				
+				dropboxAPI.metadata(FolderName,1000,"",true);
+				var send:Event = new Event(Event.COMPLETE,false,false);
+				var handler:Function = function(evt:DropboxEvent):void{
+					dropboxAPI.removeEventListener(DropboxEvent.METADATA_RESULT,handler);
+					mydbfile = DropboxFile(evt.resultObject);
+					if(mydbfile['isDir']){
+						if(mydbfile['isDeleted']){
+							MYFOLDER_FLAG = false;
+						}else{
+							MYFOLDER_FLAG = true;
+						}
+						
+					}else{
+						
+						MYFOLDER_FLAG = false;
+					}
+					dispatchEvent(send);
+					
+				};
+				
+				var faultHandler:Function = function(evt:DropboxEvent):void{
+					dropboxAPI.removeEventListener(DropboxEvent.METADATA_FAULT,faultHandler);
+					MYFOLDER_FLAG = false;
+					dispatchEvent(send);
+					
+				};
+				dropboxAPI.addEventListener(DropboxEvent.METADATA_RESULT,handler);
+				dropboxAPI.addEventListener(DropboxEvent.METADATA_FAULT,faultHandler);
+				
+				
+			}
+			
+			public function CreateFolder(FolderName:String):void{
+				dropboxAPI.fileCreateFolder(FolderName,'dropbox');
+				var handler:Function = function(evt:DropboxEvent):void{
+					dropboxAPI.removeEventListener(DropboxEvent.FILE_CREATE_FOLDER_RESULT,handler);
+					var dropboxFile:DropboxFile = DropboxFile(evt.resultObject);
+					WriteSetting();
+				};
+				dropboxAPI.addEventListener(DropboxEvent.FILE_CREATE_FOLDER_RESULT,handler);
+				if(!dropboxAPI.hasEventListener(DropboxEvent.FILE_CREATE_FOLDER_FAULT)){
+					dropboxAPI.addEventListener(DropboxEvent.FILE_CREATE_FOLDER_FAULT,faultHandler);
+				}
+			}
+			
+			public function CreateConfigFolder(MyFolderName:String):void{
+				
+				dropboxAPI.fileCreateFolder(MyFolderName + '/config','dropbox');
+				var handler:Function = function(evt:DropboxEvent):void{
+					dropboxAPI.removeEventListener(DropboxEvent.FILE_CREATE_FOLDER_RESULT,handler);
+					var dropboxFile:DropboxFile = DropboxFile(evt.resultObject);
+				};
+				dropboxAPI.addEventListener(DropboxEvent.FILE_CREATE_FOLDER_RESULT,handler);
+				if(!dropboxAPI.hasEventListener(DropboxEvent.FILE_CREATE_FOLDER_FAULT)){
+					//dropboxAPI.addEventListener(DropboxEvent.FILE_CREATE_FOLDER_FAULT,faultHandler);
+				}
+			}
+			
+			public function CreateDataFolder(MyFolderName:String):void{
+				dropboxAPI.fileCreateFolder(MyFolderName + '/data','dropbox');
+				var handler:Function = function(evt:DropboxEvent):void{
+					dropboxAPI.removeEventListener(DropboxEvent.FILE_CREATE_FOLDER_RESULT,handler);
+					var dropboxFile:DropboxFile = DropboxFile(evt.resultObject);
+				};
+				dropboxAPI.addEventListener(DropboxEvent.FILE_CREATE_FOLDER_RESULT,handler);
+				if(!dropboxAPI.hasEventListener(DropboxEvent.FILE_CREATE_FOLDER_FAULT)){
+					//dropboxAPI.addEventListener(DropboxEvent.FILE_CREATE_FOLDER_FAULT,faultHandler);
+				}
+			}
+			
+			
+			
+			
+		]]>
+	</fx:Script>
+	<mx:states>
+		<s:State name="a" />
+		<s:State name="b" />
+		<s:State name="c" />
+		<s:State name="d" />
+	</mx:states>
+	<s:BorderContainer width="100%" height="100%" includeIn="a" id="register" backgroundColor="#EEEEEE" borderVisible="false">
+		<s:HGroup gap="0" width="100%" height="25" >
+			<s:Spacer height="100%" width="50" />
+			<s:VGroup height="100%" width="100%" verticalAlign="middle" horizontalAlign="center">
+				<s:Spacer height="30%" width="100%"/>
+				<s:Label text="Setup My Share Folder on Your Dropbox Account" fontWeight="bold" fontSize="14" width="100%" height="30" />
+				<s:Spacer height="30%" width="100%"/>
+				<s:Button id="Start" label="Start Registration" width="120" height="25" click="StartRegistration(event)" />	
+				<s:Spacer height="30%" width="100%" />
+			</s:VGroup>
+			<s:Spacer height="100%" width="50" />
+		</s:HGroup>
+	</s:BorderContainer>
+	<s:BorderContainer width="100%" height="100%" includeIn="b" id="OAuth" backgroundColor="#EEEEEE" borderVisible="false">
+		<s:VGroup gap="0" width="100%" height="100%">
+			<mx:HTML id="OAuthContainer" width="100%" height="100%" locationChange="locationChangeHandler(event)" />
+			<s:HGroup gap="0" width="100%" height="25">
+				<s:Spacer height="25" width="50%" />
+				<s:Button id="getAccessToken" width="120" height="25" click="SetUpAccessToken(event)" label="Continue" visible="false" />
+				<s:Spacer height="25" width="50%" />
+			</s:HGroup>
+		</s:VGroup>
+	</s:BorderContainer>
+	<s:BorderContainer width="100%" height="100%" includeIn="c" id="AccessToken" backgroundColor="#EEEEEE" borderVisible="false" >
+		<s:HGroup width="100%" height="100%" gap="0">
+			<s:Spacer width="100" height="100%" />
+			<s:VGroup gap="0" width="100%" height="100%" contentBackgroundColor="#EEEEEE">
+				<s:Label width="100%" height="100" text="Setup Shared Folder" fontSize="18" fontWeight="bold" verticalAlign="middle" textAlign="center" />
+				<s:HGroup width="100%" height="25">
+					<s:Label text="Name :" width="35%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="namae" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25">
+					<s:Label text="E-mail :" width="35%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="email" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25">
+					<s:Label text="Current :" width="35%" height="25" verticalAlign="middle" textAlign="right"  />
+					<s:Label id="qi_normal" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25">
+					<s:Label text="Total :" width="35%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="qi_quota" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25">
+					<s:Label text="Shared :" width="35%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="qi_shared" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup gap="0" width="100%" height="25" horizontalAlign="center" verticalAlign="middle">
+					<s:Spacer width="20%" height="25"/>
+					<s:Label width="50" height="25" verticalAlign="middle" textAlign="right" text="FE_" backgroundColor="#222222" color="#00FFFF" />
+					<s:TextInput prompt="Input Share Folder Name" borderVisible="false" focusColor="#CCCCCC" contentBackgroundColor="#222222" color="#00FFFF" id="MyFolderName" width="250" height="25" />
+				</s:HGroup>
+				<s:HGroup gap="0" width="100%" height="50" horizontalAlign="center" verticalAlign="middle">
+					<s:Button id="SetMyFolderButton" cornerRadius="0" chromeColor="#CCCCCC" width="100" height="25" label="SetMyFolder" click="SetupMyFolder(event)" />
+				</s:HGroup>
+				<s:HGroup gap="0" width="100%" height="100" horizontalAlign="center" verticalAlign="middle">
+					<s:Spacer width="10%" height="25"/>
+					<s:TextInput width="250" height="50" id="message" editable="false" borderVisible="false" chromeColor="#FFFFFF" fontWeight="bold" />
+				</s:HGroup>
+			</s:VGroup>
+			<s:Spacer width="100" height="100%" />
+		</s:HGroup>
+	</s:BorderContainer>
+	<s:BorderContainer width="100%" height="100%" includeIn="d" id="SetupComplete" backgroundColor="#EEEEEE" chromeColor="#FFFFFF" fontWeight="bold" borderVisible="false">
+		<s:HGroup width="100%" height="100%" gap="0">
+			<s:Spacer width="120" height="100%" />
+			<s:VGroup gap="0" width="100%" height="100%" contentBackgroundColor="#EEEEEE">
+				<s:Label width="100%" height="100" text="Dropbox Setup Info" fontSize="18" fontWeight="bold" verticalAlign="middle" textAlign="center" />
+				<s:HGroup width="100%" height="25" horizontalAlign="center" verticalAlign="middle">
+					<s:Label text="Name :" width="30%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="info_namae" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25" horizontalAlign="center" verticalAlign="middle">
+					<s:Label text="E-mail :" width="30%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="info_email" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25" horizontalAlign="center" verticalAlign="middle">
+					<s:Label text="Current :" width="30%" height="25" verticalAlign="middle" textAlign="right"  />
+					<s:Label id="info_qi_normal" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25" horizontalAlign="center" verticalAlign="middle">
+					<s:Label text="Total :" width="30%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="info_qi_quota" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25" horizontalAlign="center" verticalAlign="middle">
+					<s:Label text="Shared :" width="30%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="info_qi_shared" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25" horizontalAlign="center" verticalAlign="middle">
+					<s:Label text="MY FOLDER :" width="30%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="info_my_folder" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25" horizontalAlign="center" verticalAlign="middle">
+					<s:Label text="MY FOLDER CONFIG File :" width="30%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="info_my_config" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25" horizontalAlign="center" verticalAlign="middle">
+					<s:Label text="MY FOLDER Quota :" width="30%" height="25" verticalAlign="middle" textAlign="right" />
+					<s:Label id="info_my_data" width="50%" height="25" verticalAlign="middle" />
+				</s:HGroup>
+			</s:VGroup>
+			<s:Spacer width="150" height="100%" />
+		</s:HGroup>
+	</s:BorderContainer>
+</mx:TitleWindow>

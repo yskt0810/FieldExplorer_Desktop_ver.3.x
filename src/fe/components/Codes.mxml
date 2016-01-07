@@ -1,0 +1,669 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" creationComplete="onCC();">
+	<fx:Declarations>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+		
+		
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import mx.collections.ArrayCollection;
+			import mx.collections.XMLListCollection;
+			import mx.controls.TextInput;
+			import mx.controls.Tree;
+			import mx.controls.treeClasses.TreeItemRenderer;
+			import mx.core.IDataRenderer;
+			import mx.core.IFlexDisplayObject;
+			import mx.events.CloseEvent;
+			import mx.events.DragEvent;
+			import mx.events.FlexEvent;
+			import mx.events.ListEvent;
+			import mx.managers.DragManager;
+			import mx.managers.PopUpManager;
+			
+			import fe.core.files.Memo;
+			import fe.core.gps.Gpsutils;
+			import fe.core.setup.FEDatabase;
+			import fe.core.setup.FEDirectory;
+			import fe.core.utils.ReadXMLFile;
+			import fe.core.utils.StringReplace;
+			import fe.core.utils.WriteXMLFile;
+			
+			[Bindable] public var CategoryList:ArrayCollection;
+			[Bindable] public var TreeFileName:String;
+			[Bindable] public var Tree:XML;
+			[Bindable] public var TreeSource:XMLListCollection;
+			
+			[Bindable] public var FileLists:ArrayCollection;
+			
+			public var Directory:FEDirectory = new FEDirectory();
+			public var Database:FEDatabase = new FEDatabase();
+			
+			public var CURRENT_FOLDER_ID:int;
+			public var CURRENT_CAT_ID:int;
+						
+			private function onCC():void{
+				
+				CategoryList = new ArrayCollection();
+				GetCategories(0);
+				TreeInitialized();
+				
+				CodeTree.addEventListener(DragEvent.DRAG_ENTER,TreeDragEnterHandler);
+				CodeTree.addEventListener(DragEvent.DRAG_OVER,TreeDragOverHandler);
+				CodeTree.addEventListener(DragEvent.DRAG_DROP,TreeDragSort);
+				
+				
+				FileView.addEventListener(NativeDragEvent.NATIVE_DRAG_ENTER,doFileDrag);
+				FileView.addEventListener(NativeDragEvent.NATIVE_DRAG_DROP,doFileDrop);
+				
+			}
+			
+			public function GetCategories(Select:int):void{
+				
+				CategoryList = new ArrayCollection();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.text = "SELECT count(tab_id) as count_id from Tab";
+				Database.stmt.execute();
+				
+				var result:SQLResult = Database.stmt.getResult();
+				var nums:int = result.data[0].count_id;
+				
+				if(nums != 0){
+					result = new SQLResult();
+					Database.stmt.text = "SELECT tab_id,tab_name, tree_file FROM Tab ORDER BY tab_id";
+					Database.stmt.execute();
+					 result = Database.stmt.getResult();
+					 
+					 var items:Object = new Object();
+					 var i:int = 0;
+					 
+					 for each(var tmp:Object in result.data){
+						 
+						 items.tab_name = tmp.tab_name;
+						 items.tree_file = tmp.tree_file;
+						 items.tab_id = tmp.tab_id;
+						 
+						 CategoryList.addItem(items);
+						 
+						 if(i==0){
+							 TreeFileName = result.data[i].tree_file;
+						 }
+						 
+						 items = new Object();
+						 i++;
+					 }
+				}
+				
+				if(Select > 0){
+					Select = Select - 1;
+				}
+				Categorys.selectedIndex = Select;
+				
+			}
+			
+			public function TreeInitialized():void{
+				
+				TreeSource = new XMLListCollection();
+				// 最初のカテゴリーファイルを取得
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.text = "SELECT tab_id,tab_name,tree_file FROM Tab ORDER BY tab_id;";
+				Database.stmt.execute();
+				
+				var result:SQLResult = Database.stmt.getResult();
+				
+				if(result.data != null){
+					var firstCatID:int = result.data[0].tab_id;
+					var firstCatName:String = result.data[0].tab_name;
+					var firstTreeFile:File = new File(Directory.RefConfigDirectory + "/" + result.data[0].tree_file);
+					
+					var ReadXML:ReadXMLFile = new ReadXMLFile();
+					Tree = new XML();
+					
+					if(firstTreeFile.exists){
+						Tree = ReadXML.ReadMethod(firstTreeFile);					
+					}
+					
+					TreeSource = new XMLListCollection(Tree.node);
+				}
+				
+			}
+			
+			public function GetCurrentTreeFile():void{
+					
+					TreeSource = new XMLListCollection();
+					var ReadXML:ReadXMLFile = new ReadXMLFile();
+					var CurrTreeFile:File = new File(Directory.RefConfigDirectory + "/" + Categorys.selectedItem.tree_file);
+					Tree = new XML();
+					if(CurrTreeFile.exists){
+						Tree = ReadXML.ReadMethod(CurrTreeFile);						
+					}
+					
+					TreeSource = new XMLListCollection(Tree.node);
+					var event:Event;
+					CallFileList(event);
+					
+			}
+			
+			public function GetMaxTreeFile():void{
+				
+				TreeSource = new XMLListCollection();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.text = "SELECT tab_id, tab_name, tree_file FROM Tab ORDER BY tab_id DESC LIMIT 1";
+				Database.stmt.execute();
+				var result:SQLResult = Database.stmt.getResult();
+				
+				if(result.data != null){
+					var ReadXML:ReadXMLFile = new ReadXMLFile();
+					var MaxTreeFile:File = new File(Directory.RefConfigDirectory + "/" + result.data[0].tree_file);
+					
+					if(MaxTreeFile.exists){
+						Tree = new XML();
+						Tree = ReadXML.ReadMethod(MaxTreeFile);
+						TreeSource = new XMLListCollection(Tree.node);
+					}
+				}
+			}
+			
+			
+			public function addFolder():void{
+				
+				if(Categorys.selectedItem != null){
+					
+					var ReadXML:ReadXMLFile = new ReadXMLFile();
+					Tree = new XML();
+					Tree = ReadXML.ReadMethod(new File(Directory.RefConfigDirectory + "/" + Categorys.selectedItem.tree_file));
+					
+					var NewNode:XML = new XML();
+					var dept:XMLList = new XMLList();
+					
+					if(CodeTree.selectedItem != null){
+						dept = Tree.descendants("*").(@id == CodeTree.selectedItem.@id);
+						NewNode = <node />;
+					}else{
+						NewNode = <node />;
+					}
+					
+					NewNode.@label = "New Folder";
+					
+					Database = new FEDatabase();
+					Database.stmt.sqlConnection = Database.ConnectFileDB;
+					Database.stmt.text = "SELECT max(folder_id) as max_folder_id from Folder";
+					Database.stmt.execute();
+					
+					var result:SQLResult = Database.stmt.getResult();
+					var max_folder_id:int = result.data[0].max_folder_id;
+					
+					trace(max_folder_id);
+					
+					NewNode.@id = max_folder_id + 1;
+					
+					Database.stmt.text = "INSERT INTO Folder (folder_id,folder_label,tab_id) VALUES (" +
+						NewNode.@id + ",'" + NewNode.@label + "'," + Categorys.selectedItem.tab_id + ");";
+					Database.stmt.execute();
+					
+					if(CodeTree.selectedItem != null){
+						dept[0].appendChild(NewNode);
+					}else if(CodeTree.selectedItem == null){
+						Tree.node.appendChild(NewNode);
+					}
+					
+					var WriteXML:WriteXMLFile = new WriteXMLFile();
+					var UpdateTreeFile:File = new File(Directory.RefConfigDirectory + "/" + Categorys.selectedItem.tree_file);
+					var UpdateTreeXML:XMLList = Tree.node;
+					
+					var OutputString:String = '<root> \n';
+					OutputString += UpdateTreeXML.toXMLString();
+					OutputString += '</root> \n';
+					OutputString = OutputString.replace(/\n/g, File.lineEnding);
+					
+					WriteXML.WriteMethod(OutputString,UpdateTreeFile);
+					
+					TreeSource = new XMLListCollection(UpdateTreeXML);
+					
+				}
+				
+			}
+			
+			private function FolderLocationChange():void{
+				
+				var UpdateTreeFile:File = new File(Directory.RefConfigDirectory + "/" + Categorys.selectedItem.tree_file);
+				var WriteTreeXML:XMLList = Tree.node;
+				var OutputString:String = '<root>\n';
+				OutputString += WriteTreeXML.toXMLString();
+				OutputString += '</root>\n';
+				OutputString = OutputString.replace(/\n/g,File.lineEnding);
+				
+				var WriteXML:WriteXMLFile = new WriteXMLFile();
+				WriteXML.WriteMethod(OutputString,UpdateTreeFile);
+				
+			}
+			
+			protected function TreeViewDoubleClickHandler(event:ListEvent):void{
+				if(CodeTree.selectedIndex != 0){
+					// Tree(event.target).editedItemPosition = { columnIndex: 0, rowIndex: event.rowIndex };
+					mx.controls.Tree(event.target).editedItemPosition = { columnIndex: 0, rowIndex: event.rowIndex };
+				}
+			}
+			
+			protected function FolderNameEditBegining(event:ListEvent):void{
+				event.preventDefault();
+			}
+			
+			public function FolderNameChangeHandler(event:ListEvent):void{
+				
+				event.preventDefault();
+				
+				var myEditor:TextInput = TextInput(event.currentTarget.itemEditorInstance);
+				var newFolderName:String = myEditor.text;
+				
+				var UpdateTreeFile:File = new File(Directory.RefConfigDirectory + "/" + Categorys.selectedItem.tree_file);
+				var ReadXML:ReadXMLFile = new ReadXMLFile();
+				Tree = new XML();
+				Tree = ReadXML.ReadMethod(UpdateTreeFile);
+				
+				Tree.descendants("*").(@id == CodeTree.selectedItem.@id).@label = newFolderName;
+				CodeTree.destroyItemEditor();
+				
+				var UpdateFolderID:int = int(CodeTree.selectedItem.@id);
+				var UpdateTabID:int = int(Categorys.selectedItem.tab_id);
+				var Replace:StringReplace = new StringReplace();
+				
+				Database = new FEDatabase();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.text = "UPDATE Folder SET folder_label = '" + Replace.EscapeInjection(newFolderName)
+					+ "' WHERE folder_id = " + UpdateFolderID + " AND tab_id = " + UpdateTabID + ";";
+				Database.stmt.execute();
+				
+				var UpdateXMLString:String = '<root>\n';
+				UpdateXMLString += XMLList(Tree.node).toXMLString();
+				UpdateXMLString += '</root>\n';
+				UpdateXMLString = UpdateXMLString.replace(/\n/g,File.lineEnding);
+				
+				var WriteXML:WriteXMLFile = new WriteXMLFile();
+				WriteXML.WriteMethod(UpdateXMLString,UpdateTreeFile);
+				
+				TreeSource = new XMLListCollection(Tree.node);
+				
+				
+			}
+			
+			
+			private function doFileDrag(dragEventObject:NativeDragEvent):void{
+				
+				if(CodeTree.selectedItem != null){
+					NativeDragManager.acceptDragDrop(FileView);
+				}
+			}
+			
+			private function doFileDrop(DroppedEventObject:NativeDragEvent):void{
+				
+				var DroppedFiles:Array = DroppedEventObject.clipboard.getData(ClipboardFormats.FILE_LIST_FORMAT) as Array;
+				var f:int = 0;
+				
+				for each( var AddFile:File in DroppedFiles){
+					
+					/** if(DroppedFiles.length == 1){
+						
+						// EXIF Load
+						
+					}else{ **/
+						
+						// Matching from GPS Log Database.
+						var Today:Number = AddFile.creationDate.time;
+						var tmpTime:Date = new Date();
+						tmpTime.setTime(Today);
+						
+						var newTime:Date = new Date(tmpTime.fullYearUTC,tmpTime.monthUTC,tmpTime.dateUTC,tmpTime.hoursUTC,tmpTime.minutesUTC,tmpTime.secondsUTC,tmpTime.millisecondsUTC);
+						
+						var GpsExec:Gpsutils = new Gpsutils();
+						var GetMatchedGPSArray:Array = GpsExec.GetMatchedLatLon(newTime.getTime(), newTime.getTime() + 30000);
+						
+						var Latitude:String;
+						var Longitude:String;
+						if(GetMatchedGPSArray != null){
+							Latitude = GetMatchedGPSArray[0].Latitude;
+							Longitude = GetMatchedGPSArray[0].Longitude;
+						}else{
+							Latitude = "";
+							Longitude = "";
+						}
+						
+						var currentTime:Date = new Date();
+						var Replace:StringReplace = new StringReplace();
+						var suffix:String = Replace.DateToString(currentTime);
+						
+						var CopyToFile:File = new File(Directory.RefDataDirectory + "/" + suffix + "_" + AddFile.name);
+						if(!CopyToFile.exists){
+							
+							try{
+								AddFile.copyTo(CopyToFile,true);
+							}catch(error:IOError){
+								trace(error.message);
+							}
+						}
+						
+						Database = new FEDatabase();
+						Database.stmt.sqlConnection = Database.ConnectFileDB;
+						Database.stmt.text = 
+							"INSERT INTO FWData (file_name,file_path,folder_id,tab_id,date,description,Latitude,Longitude,file_label,Dropbox,Servers,ptop) " + 
+							"VALUES ('" + Replace.EscapeInjection(CopyToFile.name) + "','" + Replace.EscapeInjection(CopyToFile.nativePath) + "'," 
+							+ CodeTree.selectedItem.@id + "," + Categorys.selectedItem.tab_id + "," + newTime.getTime() + ",'" + 
+							"','" + Latitude + "','" + Longitude + "','" + Replace.EscapeInjection(AddFile.name) + "',0,0,0);";
+						Database.stmt.execute();
+						
+					}
+				// }
+				
+				CallFileList(DroppedEventObject);
+				
+			}
+			
+			
+			public function CallFileList(Evt:Event):void{
+				
+				Database = new FEDatabase();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.addEventListener(SQLEvent.RESULT,setData);
+				
+				if(CodeTree.selectedItem != null){
+					var FolderID:int = int(CodeTree.selectedItem.@id);
+					var TabID:int = int(Categorys.selectedItem.tab_id);
+					
+					Database.stmt.text = "SELECT file_name, file_path, date, description, Latitude, Longitude, folder_id, tab_id, file_id, file_label,Dropbox,Servers,ptop"
+						+ " FROM FWData WHERE folder_id = " + FolderID + " AND tab_id = " + TabID + " ORDER BY date DESC;";
+					
+					Database.stmt.execute();
+					CURRENT_FOLDER_ID = FolderID;
+					CURRENT_CAT_ID = TabID;
+				}
+				
+			}
+			
+			public function ReCallFileList(event:Event):void{
+				
+				Database = new FEDatabase();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.addEventListener(SQLEvent.RESULT,setData);
+					
+				Database.stmt.text = "SELECT file_name, file_path, date, description, Latitude, Longitude, folder_id, tab_id, file_id, file_label,Dropbox,Servers,ptop"
+					+ " FROM FWData WHERE folder_id = " + CURRENT_FOLDER_ID + " AND tab_id = " + CURRENT_CAT_ID + " ORDER BY date DESC;";
+				
+				Database.stmt.execute();
+					
+				
+			}
+			
+			private function setData(evt:Event):void{
+				
+				FileLists = new ArrayCollection();
+				var tmp_list:ArrayCollection = new ArrayCollection(Database.stmt.getResult().data);
+				for (var i:int=0;i<tmp_list.length; i++){
+					var items:Object = new Object();
+					items.file_name = tmp_list[i].file_name;
+					items.file_path = tmp_list[i].file_path;
+					items.date = tmp_list[i].date;
+					items.description = tmp_list[i].description;
+					items.Latitude = tmp_list[i].Latitude;
+					items.Longitude = tmp_list[i].Longitude;
+					items.folder_id = tmp_list[i].folder_id;
+					items.tab_id = tmp_list[i].tab_id;
+					items.file_id = tmp_list[i].file_id;
+					items.file_label = tmp_list[i].file_label;
+					items.Dropbox = tmp_list[i].Dropbox;
+					items.Servers = tmp_list[i].Servers;
+					items.ptop = tmp_list[i].ptop;
+					items.sign = "files";
+					
+					FileLists.addItem(items);
+					
+				}
+				
+			}
+			
+			public function DeleteFile():void{
+				
+				var CurrentFileID:int = FileView.selectedItem.file_id;
+				
+				Database = new FEDatabase();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.text = "SELECT file_name FROM FWData WHERE file_id = " + CurrentFileID + ";";
+				Database.stmt.execute();
+				
+				trace(CurrentFileID);
+				var result:SQLResult = new SQLResult();
+				result = Database.stmt.getResult();
+				var tmp_Filename:String = result.data[0].file_name;
+				
+				Database.stmt.text = "DELETE from FWData WHERE file_id = " + CurrentFileID + ";";
+				Database.stmt.execute();
+				
+				Database.stmt.text = "SELECT count(file_id) as count_file FROM FWData " + 
+					"WHERE file_name = '" + tmp_Filename + "';";
+				Database.stmt.execute();
+				
+				result = new SQLResult();
+				result = Database.stmt.getResult();
+				
+				var count:int = result.data[0].count_file;
+				
+				if(count == 0){
+					var RemoveFile:File = new File(Directory.RefDataDirectory + "/" + tmp_Filename);
+					if(RemoveFile.exists){
+						RemoveFile.deleteFile();	
+					}
+				}
+				
+				var event:Event;
+				CallFileList(event);
+			}
+			
+			
+			public function GetMaxCategoryIndex():int{
+				
+				Database = new FEDatabase();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.text = "SELECT count(tab_id) as max_tab_id FROM Tab;";
+				Database.stmt.execute();
+				
+				var result:SQLResult = new SQLResult();
+					
+				result = Database.stmt.getResult();
+				trace(result.data.length);
+				var max_tab_id:int = result.data[0].max_tab_id;
+				
+				return max_tab_id;
+				
+			}
+			
+			private function TreeDragEnterHandler(event:DragEvent):void{
+
+				if(event.relatedObject == FileView){
+					if(CodeTree.indexToItemRenderer(CodeTree.calculateDropIndex(event)) != null){
+						event.preventDefault();
+						var Initiator : * = event.currentTarget;
+						DragManager.acceptDragDrop(Initiator);
+						
+					}else{
+						trace("false");
+					}
+				}
+			}
+			
+			private function TreeDragOverHandler(event:DragEvent):void{
+				
+				if(event.relatedObject == FileView){
+					event.preventDefault();
+					if(CodeTree.indexToItemRenderer(CodeTree.calculateDropIndex(event)) != null){
+						
+						if(event.ctrlKey){
+							DragManager.showFeedback(DragManager.COPY);
+							
+						}else{
+							DragManager.showFeedback(DragManager.MOVE);
+						}
+						
+					}else{
+						DragManager.showFeedback(DragManager.NONE);
+					}
+				}
+				
+			}
+			
+			private function TreeDropHandler(event:DragEvent):void{
+				
+				var itemRenderer:TreeItemRenderer = TreeItemRenderer(CodeTree.indexToItemRenderer(CodeTree.calculateDropIndex(event)));
+				if(itemRenderer.data.@id != null){
+					if(FileMove.selected){
+						
+						Database.stmt.text = "UPDATE FWData SET folder_id = " + 
+							itemRenderer.data.@id + ", tab_id = " + Categorys.selectedItem.tab_id +
+							" WHERE file_id = " + FileView.selectedItem.file_id + ";";
+						Database.stmt.execute();
+					}else if(FileCopy.selected){
+						Database.stmt.text = "INSERT INTO FWData (file_name,file_path,file_label,folder_id,tab_id,date,Latitude,Longitude,description) VALUES (" +  
+							"'" + String(FileView.selectedItem.file_name) +  "'," + 
+							"'" + String(FileView.selectedItem.file_path) +  "'," +
+							"'" + String(FileView.selectedItem.file_label) + "'," +
+							itemRenderer.data.@id + "," +
+							Categorys.selectedItem.tab_id + "," +
+							FileView.selectedItem.date + "," +
+							"'" + String(FileView.selectedItem.Latitude) + "'," +
+							"'" + String(FileView.selectedItem.Longitude) + "'," +
+							"'" + String(FileView.selectedItem.description) + "');";
+						trace(Database.stmt.text);
+						Database.stmt.execute();
+						
+					}
+				}
+			}
+			
+			private function TreeDragSort(event:DragEvent):void{
+				
+				if(event.relatedObject == CodeTree){
+					
+					FolderLocationChange();
+					
+				}else if(event.relatedObject == FileView){
+					
+					var itemRenderer:TreeItemRenderer = TreeItemRenderer(CodeTree.indexToItemRenderer(CodeTree.calculateDropIndex(event)));
+					if(itemRenderer.data.@id != null){
+						if(FileMove.selected){
+							
+							Database.stmt.text = "UPDATE FWData SET folder_id = " + 
+								itemRenderer.data.@id + ", tab_id = " + Categorys.selectedItem.tab_id +
+								" WHERE file_id = " + FileView.selectedItem.file_id + ";";
+							Database.stmt.execute();
+						}else if(FileCopy.selected){
+							Database.stmt.text = "INSERT INTO FWData (file_name,file_path,file_label,folder_id,tab_id,date,Latitude,Longitude,description,Dropbox,Servers,ptop) VALUES (" +  
+								"'" + String(FileView.selectedItem.file_name) +  "'," + 
+								"'" + String(FileView.selectedItem.file_path) +  "'," +
+								"'" + String(FileView.selectedItem.file_label) + "'," +
+								itemRenderer.data.@id + "," +
+								Categorys.selectedItem.tab_id + "," +
+								FileView.selectedItem.date + "," +
+								"'" + String(FileView.selectedItem.Latitude) + "'," +
+								"'" + String(FileView.selectedItem.Longitude) + "'," +
+								"'" + String(FileView.selectedItem.description) + "'," +
+								FileView.selectedItem.Dropbox + "," + FileView.selectedItem.Servers + "," + FileView.selectedItem.ptop + ");";
+							trace(Database.stmt.text);
+							Database.stmt.execute();
+						}
+					
+					}
+					
+				}
+				
+			}
+			
+			private function onInit12(e:FlexEvent):void {
+				
+				var leafIcon:Class = CodeTree.getStyle("folderClosedIcon");
+				CodeTree.setStyle("defaultLeafIcon", leafIcon);	
+				
+			}
+			
+			private function FileFieldDoubleClick():void{
+				
+				var OpenFile:File = new File(Directory.RefDataDirectory + "/" + FileView.selectedItem.file_name);
+				var popup:IFlexDisplayObject;
+				var args:Object = new Object();
+				
+				if(OpenFile.exists){
+					
+					if(OpenFile.extension == "txt"){
+						
+						args.selectedTabId = Categorys.selectedItem.tab_id;
+						args.selectedTabLabel = Categorys.selectedItem.tab_name;
+						args.selectedTreeFile = Categorys.selectedItem.tree_file;
+						args.selectedFolder = CodeTree.selectedItem;
+						args.selectedIdx = CodeTree.selectedIndex;
+						args.selectedFileName = FileView.selectedItem.file_name;
+						args.selectedFileLabel = FileView.selectedItem.file_label;
+						args.selectedFileId = FileView.selectedItem.file_id;
+						args.withFile = true;
+						
+						popup = PopUpManager.createPopUp(this, fe.core.files.Memo, true);
+						popup.addEventListener(CloseEvent.CLOSE,CloseNewMemo);
+						IDataRenderer(popup).data = args;
+						PopUpManager.centerPopUp(popup);
+						
+					}else{
+						
+						OpenFile.openWithDefaultApplication();
+						
+					}
+					
+				}
+			}
+			
+			
+			private function CloseNewMemo(event:Event):void{
+				
+				CallFileList(event);
+				CodeTree.destroyItemEditor();
+				
+			}
+			
+		]]>
+	</fx:Script>
+	<s:VGroup width="100%" height="100%" gap="0">
+		<s:VGroup width="100%" height="50%" gap="0" id="FileViewSpace">
+			<s:HGroup width="100%" height="25" gap="1">
+				<s:DropDownList borderVisible="false" cornerRadius="0" chromeColor="0x000000"  
+								id="Categorys" width="100%" height="25" dataProvider="{CategoryList}"
+								labelField="tab_name" color="0xFFFFFF" contentBackgroundColor="0x222222" change="GetCurrentTreeFile();" />
+			</s:HGroup>
+			
+			<s:BorderContainer backgroundColor="0x222222" width="100%" height="25" borderVisible="false">
+				<s:HGroup width="100%" height="100%" fontSize="10" gap="10" 
+						  paddingLeft="10" paddingRight="10" textAlign="right"
+						  verticalAlign="middle">
+					<s:RadioButton id="FileCopy" label="Copy" color="#FFFFFF" groupName="radiogroup1"
+								   selected="false"/>
+					<s:RadioButton id="FileMove" label="Move" color="#FFFFFF" groupName="radiogroup1"
+								   selected="true"/>	
+				</s:HGroup>
+			</s:BorderContainer>
+			
+			<s:List id="FileView" width="100%" height="100%"
+					dataProvider="{FileLists}" labelField="file_label" borderVisible="false"
+					dragEnabled="true" doubleClickEnabled="true" doubleClick="FileFieldDoubleClick();" horizontalScrollPolicy="off" />
+		</s:VGroup>
+		<s:VGroup width="100%" height="50%" gap="0" id="TreeSpace">
+			<mx:Tree width="100%" height="100%" id="CodeTree" contentBackgroundAlpha="1"
+					 contentBackgroundColor="0x222222" x="0" y="0"
+					 dataProvider="{TreeSource}" labelField="@label" 
+					 initialize="onInit12(event)" color="0xFFFFFF"
+					 editable="true" doubleClickEnabled="true" 
+					 dragEnabled="true" dropEnabled="true" borderVisible="false" borderColor="#333333" 
+					 itemDoubleClick="TreeViewDoubleClickHandler(event);"
+					 itemEditBeginning="FolderNameEditBegining(event);"
+					 itemEditEnd="FolderNameChangeHandler(event);" horizontalScrollPolicy="off" />
+		</s:VGroup>
+		
+		
+		
+	</s:VGroup>
+</s:Group>

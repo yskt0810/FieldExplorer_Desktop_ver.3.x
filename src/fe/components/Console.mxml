@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" creationComplete="onCC();">
+	<fx:Declarations>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			
+			private function onCC():void{
+				
+				var expText:String =
+					"Short Cut \n" + 
+					"Add Category: Alt + t | Update Category: Alt + u | Delete Category: Alt + d | " + 
+					"Add Folder: Ctrl + f | Delete Folder: Ctrl + r | Delete File: Ctrl + Alt + k \n" + 
+					"Open GPS Log File Import: Alt + Shift + n | Set Marker on the center of the Map: Alt + Shift + m";
+				ShortCutExp.text = expText;
+			}
+		]]>
+	</fx:Script>
+	<s:BorderContainer width="100%" height="100%" borderColor="#333333">
+		<s:Label width="100%" height="100%" id="ShortCutExp"
+				 backgroundColor="#222222" color="#FFFFFF" fontSize="12" verticalAlign="middle" />	
+	</s:BorderContainer>
+	
+</s:Group>

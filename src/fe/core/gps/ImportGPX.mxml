@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="800" height="600" 
+		 xmlns:mq="com.mapquest.tilemap.*" showCloseButton="true" close="closePopup(event)" 
+		  layout="absolute" creationComplete="onCC();" title="Import GPX Log">
+	<fx:Declarations>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import com.mapquest.LatLng;
+			import com.mapquest.LatLngCollection;
+			import com.mapquest.tilemap.controls.inputdevice.MouseWheelZoomControl;
+			import com.mapquest.tilemap.controls.shadymeadow.SMLargeZoomControl;
+			import com.mapquest.tilemap.overlays.LineOverlay;
+			
+			import mx.collections.ArrayCollection;
+			import mx.events.CloseEvent;
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			
+			import fe.core.gps.Gpx;
+			import fe.core.setup.FEDatabase;
+			
+			[Bindable] public var zoom:int;
+			[Bindable] private var LogFileListArray:ArrayCollection;
+			[Bindable] private var Route:ArrayCollection;
+			
+			[Bindable] private var ConsoleMes:String;
+			
+			private var myOL:LineOverlay;
+			private var LineFlag:Boolean = false;
+			[Bindable] public var gpslog:Gpx;
+			
+			private function onCC():void{
+				this.removeEventListener(FlexEvent.CREATION_COMPLETE,this.onCC);
+				zoom = 10;
+				LogMap.setCenter(new LatLng(41.855559,-87.617228),zoom);
+				LogFileListArray = new ArrayCollection();
+				
+				LogMap.addControl(new SMLargeZoomControl());
+				LogMap.addControl(new SMLargeZoomControl());
+				LogMap.addControl(new MouseWheelZoomControl());
+				zoom = LogMap.zoom;
+				
+				LogFileList.addEventListener(NativeDragEvent.NATIVE_DRAG_ENTER,doLogFileDrag);
+				LogFileList.addEventListener(NativeDragEvent.NATIVE_DRAG_DROP,doLogFileDrop);
+				
+			}
+			
+			private function doLogFileDrag(event:NativeDragEvent):void{
+				NativeDragManager.acceptDragDrop(LogFileList);
+			}
+			
+			private function doLogFileDrop(event:NativeDragEvent):void{
+				var DroppedFiles:Array = event.clipboard.getData(ClipboardFormats.FILE_LIST_FORMAT) as Array;
+				var f:int = 0;
+				
+				var FileListsData:Object = new Object();
+				for each (var AddFile:File in DroppedFiles){
+					if(AddFile.extension == "gpx"){
+						FileListsData.file_name = AddFile.name;
+						FileListsData.file_path = AddFile.nativePath;
+						LogFileListArray.addItem(FileListsData);
+						
+					}
+					FileListsData = new Object();
+				}
+				
+			}
+			
+			private function ReadGPX():void{
+				
+				var file_name:String = LogFileList.selectedItem.file_name;
+				var file_path:String = LogFileList.selectedItem.file_path;
+				var readFile:File = new File(file_path);
+				var readFileStream:String;
+				
+				var stream:FileStream = new FileStream();
+				stream.open(readFile,FileMode.READ);
+				readFileStream = stream.readUTFBytes(stream.bytesAvailable);
+				stream.close();
+				
+				var xmlData:XML = new XML(readFileStream);
+				gpslog = new Gpx();
+				gpslog.GpxLoad(xmlData);
+				
+				Route = new ArrayCollection();
+				Route = gpslog.GPSLogData;
+				
+				RouteMapping(Route,"gpx");
+				
+			}
+			
+			private function RouteMapping(LogData:ArrayCollection,prefix:String):void{
+				
+				var shapePts:LatLngCollection = new LatLngCollection();
+				var Latitude:String;
+				var Longitude:String;
+				
+				myOL = new LineOverlay();
+				myOL.borderWidth = 3;
+				myOL.color = 0x3366FF;
+				
+				if(LineFlag){
+					LogMap.removeShapes();
+					LineFlag = false;
+				}
+				
+				for each (var data:Object in LogData){
+					if(data.lat != ""){
+						if(data.lon != ""){
+							Latitude = data.lat;
+							Longitude = data.lon;
+							
+						}
+					}
+					
+					var latlng:LatLng = new LatLng();
+					latlng.setLatLng(Number(Latitude),Number(Longitude));
+					shapePts.add(latlng);
+					
+				}
+				
+				myOL.shapePoints = (shapePts);
+				LogMap.setCenter(shapePts[0],zoom);
+				
+				if(!LineFlag){
+					LogMap.addShape(myOL);
+					LineFlag = true;
+				}
+				
+			}
+			
+			private function InsertGPSLogArray():void{
+				
+				if(LogFileList.selectedItem != null){
+					
+					var progress:int;
+					var max_progress:int;
+					
+					var Database:FEDatabase = new FEDatabase();
+					Database.stmt.sqlConnection = Database.ConnectGPSDB;
+					
+					var hold_time:String;
+					max_progress = Route.length;
+					progress = 0;
+					
+					var prifex:String = "log";
+					
+					var _a:Number = 0;
+					
+					ConsoleMes = "Importing " + LogFileList.selectedItem.file_name + ".....　\n";
+					
+					Database.stmt.text = "INSERT into GPSLog (date,log_filename,Latitude,Longitude) VALUES ( @DATE, @LOG_FILENAME, @LATITUDE, @LONGITUDE)";
+					Database.ConnectGPSDB.begin();
+					
+					for each (var tmp:Object in Route){
+						
+						if(tmp.Date != ""){
+							if(tmp.Time != ""){
+								if(tmp.lat != ""){
+									if(tmp.lon != ""){
+										
+										var SplitDate:Array = String(tmp.Date).split("-");
+										var SplitTime:Array = String(tmp.Time).split(":");									
+											
+										var RegDate:Date = 
+											new Date(int(SplitDate[0]),int(SplitDate[1]) - 1,int(SplitDate[2]),
+												int(SplitTime[0]),int(SplitTime[1]),int(SplitTime[2]));
+										
+										// 事前にGoogle Map 形式の文字列にしておく
+										var Latitude:String;
+										var Lotation:String;
+										
+										
+										Latitude = tmp.lat;
+										Lotation = tmp.lon;
+										
+										if(hold_time != tmp.Time){
+											//Database.stmt.text += "INSERT INTO GPSLog (date,log_filename,Latitude,Longitude) VALUES " + "(" + RegDate.time + ",'" + LogFileList.selectedItem.file_name + "','" + Latitude + "','" + Lotation + "');";
+											//Database.stmt.parameters["@DATE"] = (RegDate.time + (60000 * 3));
+											Database.stmt.parameters["@DATE"] = RegDate.time;
+											Database.stmt.parameters["@LOG_FILENAME"] = LogFileList.selectedItem.file_name;
+											Database.stmt.parameters["@LATITUDE"] = Latitude;
+											Database.stmt.parameters["@LONGITUDE"] = Lotation;
+											Database.stmt.execute();
+											
+										}
+										
+										hold_time = tmp.Time;
+										
+									}
+								}
+							}
+						}
+						
+					}
+					
+					Database.ConnectGPSDB.commit();
+					
+					var r:int = LogFileList.selectedIndex;
+					ConsoleMes = "File " + LogFileList.selectedItem.file_name + " are imported. \n";
+					LogFileListArray.removeItemAt(r);
+					
+				}
+				
+				
+				
+			}
+			
+			public function ZoomChange():void{
+				if(zoom <= 18){
+					zoom = LogMap.zoom;
+				}
+			}
+			
+			public function ZoomSet():void{
+				if(InputZoom.text != ""){
+					zoom = parseInt(InputZoom.text);
+					if(zoom <= 18){
+						LogMap.zoom = zoom;
+					}
+				}
+			}
+			
+			private function closePopup(e:CloseEvent):void{
+				PopUpManager.removePopUp(this);
+			}
+			
+			private function commitClose():void{
+				var e:CloseEvent = new CloseEvent(CloseEvent.CLOSE,false,false);
+				dispatchEvent(e);
+			}
+		]]>
+	</fx:Script>
+	<s:VGroup width="100%" height="100%" gap="1">
+		<s:HGroup height="100%" width="100%" gap="0">
+			<s:List id="LogFileList" width="20%" height="100%" change="ReadGPX();" dataProvider="{LogFileListArray}" labelField="file_name" />
+			<s:VGroup width="80%" height="100%" gap="0">
+				<s:HGroup height="25" width="100%" gap="0" >
+					<s:Label color="0xFFFFFF" backgroundColor="0x333333" height="25" width="100%" text="Zoom Level: " textAlign="right" verticalAlign="middle" />
+					<s:TextInput id="InputZoom" width="25" height="25" text="{zoom}" enter="ZoomSet()" />
+				</s:HGroup>
+				<mq:TilemapComponent width="100%" height="100%" id="LogMap"
+									 key="Fmjtd%7Cluur2061l9%2C8a%3Do5-9aynhu" zoomend="ZoomChange();" />
+			</s:VGroup>
+		</s:HGroup>
+		<s:HGroup x="0" width="100%" height="30" gap="0">
+			<s:Button id="Start" label="IMPORT" width="20%" height="30" chromeColor="0x333333" color="0xFFFFFF" click="InsertGPSLogArray();" />
+			<s:TextArea id="Console" text="{ConsoleMes}" contentBackgroundColor="0x333333" color="0x00FF00" width="80%" height="30" />
+		</s:HGroup>
+	</s:VGroup>
+</mx:TitleWindow>

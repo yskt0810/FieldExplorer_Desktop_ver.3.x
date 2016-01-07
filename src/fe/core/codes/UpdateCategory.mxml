@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="300" height="200"
+		  showCloseButton="true" close="closePopup(event)" creationComplete="onCC();">
+	<fx:Declarations>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import mx.events.CloseEvent;
+			import mx.managers.PopUpManager;
+			
+			import fe.core.setup.FEDatabase;
+			import fe.core.setup.FEDirectory;
+			import fe.core.utils.ReadXMLFile;
+			import fe.core.utils.StringReplace;
+			import fe.core.utils.WriteXMLFile;
+			
+			
+			private var Directory:FEDirectory = new FEDirectory();
+			private var Database:FEDatabase = new FEDatabase();
+			private var Replace:StringReplace = new StringReplace();
+			
+			[Bindable] public var AddedFileName:String;
+			
+			private function onCC():void{
+				
+				Name.text = this.data.tab_name;
+				
+			}
+			
+			private function Update():void{
+				
+				if(Name.text == ""){
+					ErrorMes.text = "You Cannot create the tab that name is empty."
+				}else{
+					
+					Database.stmt.sqlConnection = Database.ConnectFileDB;
+					Database.stmt.text = "SELECT count(tab_id) as count_tab_id FROM Tab WHERE tab_name = '"
+						+ Replace.EscapeInjection(Name.text) + "'";
+					Database.stmt.execute();
+					
+					var result:SQLResult = Database.stmt.getResult();
+					var count_tab_id:int = result.data[0].count_tab_id;
+					
+					if(count_tab_id == 0){
+						
+						var TreeFile:File = new File(Directory.RefConfigDirectory + "/" + this.data.tab_name + ".xml");
+						var ReadFile:ReadXMLFile = new ReadXMLFile();
+						var ReadCategoryTree:XML = ReadFile.ReadMethod(TreeFile);
+						
+						ReadCategoryTree.node[0].@label = Name.text;
+						
+						var RenameTreeFile:File = new File(Directory.RefConfigDirectory + "/" + Name.text + ".xml");
+						var WriteFile:WriteXMLFile = new WriteXMLFile();
+						WriteFile.WriteMethod(ReadCategoryTree,RenameTreeFile);
+						
+						
+						Database.stmt.text = "Update Tab set tab_name = '" + Replace.EscapeInjection(Name.text) 
+							+ "', tree_file='" + Replace.EscapeInjection(RenameTreeFile.name)
+							+ "' WHERE tab_id = " + this.data.tab_id + ";";
+						Database.stmt.execute();
+						
+						TreeFile.deleteFile();
+						commitClose();
+						
+					}else{
+						ErrorMes.text = "You cannot use the name that you have already used.";
+					}
+				}
+			}
+			
+			private function closePopup(e:CloseEvent):void{
+				PopUpManager.removePopUp(this);
+			}
+			
+			private function commitClose():void{
+				var e:CloseEvent = new CloseEvent(CloseEvent.CLOSE,false,false);
+				dispatchEvent(e);
+			}
+		]]>
+	</fx:Script>
+	
+	<s:Group width="100%" height="100%" >
+		<s:Label width="100%" height="25" x="0" y="20" text="Update Category Name" fontSize="14" textAlign="center" />
+		<s:TextInput width="250" x="20" y="50" height="25" id="Name" enter="Update();" />
+		<s:Button width="100" x="100" y="80" height="25" label="ADD" click="Update();" />
+		<s:Label id="ErrorMes" width="100%" height="25" x="0" y="120" color="0xFF0000" textAlign="center" />
+	</s:Group>
+	
+</mx:TitleWindow>

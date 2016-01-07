@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" creationComplete="onCC();">
+	<fx:Declarations>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import mx.events.FlexEvent;
+			
+			import spark.components.Image;
+			import spark.components.TextArea;
+			import spark.components.VideoPlayer;
+			
+			import fe.core.setup.FEDatabase;
+			import fe.core.setup.FEDirectory;
+			import fe.core.utils.GetFileDateTime;
+			import fe.core.utils.StringReplace;
+			
+			import jp.shichiseki.exif.ExifLoader;
+			import jp.shichiseki.exif.IFD;
+			
+			public var Directory:FEDirectory;
+			public var Database:FEDatabase;
+			
+			[Bindable] public var FileInfo:Object;
+			[Bindable] public var GetDateArray:Array;
+			
+			public var ImageBase:Image;
+			public var ImgFlg:Boolean;
+			public var VideoBase:VideoPlayer;
+			public var VDFlag:Boolean;
+			public var TextBase:TextArea;
+			public var TxtFlag:Boolean;
+			
+			public var exifloader:ExifLoader;
+			
+			[Bindable] public var TZ:Number;
+			
+			[Bindable] public var SETCURRENTLAT:String;
+			[Bindable] public var SETCURRENTLON:String;
+			
+			private function onCC():void{
+				
+				IME.enabled = true;
+				file_name.imeMode = IMEConversionMode.JAPANESE_HIRAGANA;
+				description.imeMode = IMEConversionMode.JAPANESE_HIRAGANA;
+				Directory = new FEDirectory();
+				Database = new FEDatabase();
+				FileInfo = new Object();
+				GetDateArray = new Array();
+				ImgFlg = false;
+				VDFlag = false;
+				TxtFlag = false;
+				
+			}
+			
+			public function ClearAllContents():void{
+				
+				if(ImgFlg){
+					ShowVisualContents.removeElement(ImageBase);
+					ImgFlg = false;
+				}
+				
+				if(VDFlag){
+					ShowVisualContents.removeElement(VideoBase);
+					VDFlag = false;
+				}
+				
+				file_name.text = "";
+				FileDate.text = "";
+				FileHour.text = "";
+				FileMin.text = "";
+				FileSec.text = "";
+				Latitude.text = "";
+				Longitude.text = "";
+				description.text = "";
+					
+			}
+			
+			public function Check(Target:Object):void{
+				
+				FileInfo = Target;
+
+				file_name.text = Target.file_label;
+				var GetDate:GetFileDateTime = new GetFileDateTime();
+				GetDateArray = GetDate.ConvertWithString(new Date(Target.date - TZ));
+				// FileDate.text = GetDateArray[0] + "/" + GetDateArray[1] + "/" + GetDateArray[2] + " " + GetDateArray[3] + ":" + GetDateArray[4] + ":" + GetDateArray[5];
+				FileDate.displayedYear = int(new Date(Target.date - TZ).getFullYear());
+				FileDate.displayedMonth = int(new Date(Target.date - TZ).getMonth());
+				FileDate.selectedDate = new Date(Target.date);
+				FileDate.text = GetDateArray[1] + "/" + GetDateArray[2] + "/" + GetDateArray[0];
+				FileHour.text = GetDateArray[3];
+				FileMin.text = GetDateArray[4];
+				FileSec.text = GetDateArray[5];
+				Latitude.text = Target.Latitude;
+				Longitude.text = Target.Longitude;
+				description.text = Target.description;
+				if(Target.Dropbox == 1){ Dropbox.selected = true; }
+				if(Target.Servers == 1){ Servers.selected = true; }
+				if(Target.ptop == 1){ ptop.selected = true; }
+				
+				var CheckFile:File = new File(Directory.RefDataDirectory + "/" + Target.file_name);
+				if(CheckFile.exists){
+					if(CheckFile.extension == "jpg" || CheckFile.extension == "JPG"){
+						callImageFile(CheckFile);
+						if(Target.Latitude == "" && Target.Longitude == ""){
+							ExifLoading(CheckFile.url);
+						}
+					}
+					if(CheckFile.extension == "mov" || CheckFile.extension == "MOV"
+						|| CheckFile.extension == "mp4" || CheckFile.extension == "MP4" ){
+						callVideoFile(CheckFile);
+					}
+				}
+			}
+			
+			private function callImageFile(TargetFile:File):void{
+				
+				ImageBase = new Image();
+				ImageBase.source = TargetFile.url;
+				ImageBase.percentWidth = 100;
+				ImageBase.percentHeight = 100;
+				ImageBase.x = 0;
+				ImageBase.y = 0;
+				ImageBase.verticalAlign = "top";
+				ImageBase.horizontalAlign = "left";
+				ImageBase.setStyle("backgroundColor",0x222222);
+				ShowVisualContents.addElement(ImageBase);
+				ImgFlg = true;
+				
+			}
+			
+			private function callVideoFile(TargetFile:File):void{
+				
+				VideoBase = new VideoPlayer();
+				VideoBase.source = TargetFile.url;
+				VideoBase.soundTransform.volume;
+				VideoBase.percentWidth = 100;
+				VideoBase.percentHeight = 60;
+				VideoBase.x = 0;
+				VideoBase.y = 0;
+				VideoBase.setStyle("dropShadowVisible",false);
+				
+				ShowVisualContents.addElement(VideoBase);
+				VDFlag = true;
+				
+				
+			}
+			
+			
+			
+			
+			public function ExifLoading(url:String):void{
+				
+				exifloader = new ExifLoader();
+				exifloader.addEventListener(Event.COMPLETE,ExifComplete);
+				exifloader.load(new URLRequest(url));
+				
+			}
+			
+			public function ExifComplete(e:Event):void{
+				
+				if(exifloader.exif.ifds != null){
+					
+					if(exifloader.exif.ifds.gps != null) {
+						var gpsIfd:IFD = exifloader.exif.ifds.gps;
+						var exifLat:Array = gpsIfd["GPSLatitude"] as Array;
+						var exifLon:Array = gpsIfd["GPSLongitude"] as Array;
+						
+						if(exifLat != null){
+							if(exifLon != null){
+								var Lat:Number = ConvertExifData(exifLat[0],exifLat[1],exifLat[2],gpsIfd["GPSLatituderef"]);
+								var Lon:Number = ConvertExifData(exifLon[0],exifLon[1],exifLon[2],gpsIfd["GPSLongitudeRef"]);
+								//Latitude.text = String(Lat);
+								//Longitude.text = String(Lon);	
+								SETCURRENTLAT = String(Lat);
+								SETCURRENTLON = String(Lon);
+								Latitude.text = SETCURRENTLAT;
+								Longitude.text = SETCURRENTLON;
+								
+							}else{
+								Longitude.text = "";
+							}
+						}else{
+							Latitude.text = "";
+						}
+					}else{
+						Latitude.text = "";
+						Longitude.text = "";
+					}
+
+				}else{
+					Latitude.text = "";
+					Longitude.text = "";
+				}
+				trace(SETCURRENTLAT,SETCURRENTLON);
+				trace(Latitude.text,Longitude.text);
+				Database = new FEDatabase();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.text = "UPDATE FWData SET Latitude = '" + Latitude.text + "', Longitude = '" + Longitude.text + "' WHERE file_id = " + FileInfo.file_id + ";"; 
+				Database.stmt.execute();
+				
+			}
+			
+			public function ConvertExifData(degrees:Number,minutes:Number,seconds:Number,reference:String):Number{
+				
+				// The following code is from :http://himco.jp/air-for-android/?p=2104
+				// See also:  http://blog.digitalbackcountry.com/2010/10/the-camera-api-and-geolocation-exif-data-on-air-for-android/
+				
+				//var tmp:String = String(degrees) + "." + String(minutes) + String(seconds);
+				//var decimal:Number = Number(tmp);
+				
+				var decimal:Number = degrees + (minutes/60) + (seconds / 3600);
+				// サンプルコードのままでは東経で負の値が返されるので、以下をコメントアウト
+				    // figure out whether we need to use negative latitude or longitude
+				    if (reference == "S" || reference == "W")
+				    {
+					        return decimal * -1;
+				    }
+				    else
+				    {
+					        return decimal;
+				    }
+				
+			}
+			
+			
+			public function filelabel_change():void{
+				
+				if(file_name.text != ""){
+					var Replace:StringReplace = new StringReplace();
+					
+					Database = new FEDatabase();
+					Database.stmt.sqlConnection = Database.ConnectFileDB;
+					Database.stmt.text = "UPDATE FWData SET file_label = '" + Replace.EscapeInjection(file_name.text) + "' WHERE file_id = " + FileInfo.file_id;
+					Database.stmt.execute();
+				}
+				
+				
+			}
+			
+			public function description_change():void{
+				
+				var Replace:StringReplace = new StringReplace();
+				Database = new FEDatabase();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				Database.stmt.text = "UPDATE FWData SET description = '" + Replace.EscapeInjection(description.text) + "' WHERE file_id = " + FileInfo.file_id;
+				Database.stmt.execute();
+			}
+			
+			public function Date_Change():void{
+				if(FileDate.selectedDate != null){
+					
+					var tmpDate:Date = new Date(FileDate.selectedDate.fullYear,FileDate.selectedDate.month,FileDate.selectedDate.date,int(FileHour.text),int(FileMin.text),int(FileSec.text));
+					var newDate:Date = new Date(tmpDate.time + TZ);
+					Database = new FEDatabase();
+					Database.stmt.sqlConnection = Database.ConnectFileDB;
+					Database.stmt.text = "UPDATE FWData SET date = " + newDate.getTime() + " WHERE file_id = " + FileInfo.file_id;
+					Database.stmt.execute();
+					
+				}
+			}
+			
+			
+			
+		]]>
+	</fx:Script>
+	<s:BorderContainer backgroundColor="0x222222" id="DataProperties" width="100%" height="100%" x="0" y="0" borderVisible="false">
+		<s:VGroup width="100%" height="100%" gap="0">
+			<s:VGroup width="100%" height="50%" gap="0">
+				<s:TextInput width="100%" height="25" editable="false" id="file_name" borderAlpha="0.8" doubleClickEnabled="true" />
+				<!-- <s:TextInput width="100%" height="25" editable="false" id="FileDate" borderAlpha="0.8" /> -->
+				<s:HGroup width="100%" height="25" verticalAlign="middle" horizontalAlign="left">
+					<mx:DateField id="FileDate" width="40%" height="20" textAlign="center" editable="false" />
+					<s:TextInput id="FileHour" width="10%" height="20" borderVisible="false" editable="false" textAlign="center" doubleClickEnabled="true" />
+					<s:Label text=":" color="0xFFFFFF" height="25" verticalAlign="middle" textAlign="center" />
+					<s:TextInput id="FileMin" width="10%" height="20" borderVisible="false" editable="false" textAlign="center" doubleClickEnabled="true" />
+					<s:Label text=":" color="0xFFFFFF" height="20" verticalAlign="middle" textAlign="center" />
+					<s:TextInput id="FileSec" width="10%" height="20" borderVisible="false" editable="false" textAlign="center" doubleClickEnabled="true" />
+				</s:HGroup>
+				
+				<s:HGroup width="100%" height="25" verticalAlign="middle" horizontalAlign="left" gap="0">
+					<s:TextInput text="{SETCURRENTLAT}" width="100%" height="25" editable="false" id="Latitude" borderAlpha="0.8" />
+				</s:HGroup>
+				<s:HGroup width="100%" height="25" verticalAlign="middle" horizontalAlign="left" gap="0">
+					<s:TextInput text="{SETCURRENTLON}" width="100%" height="25" editable="false" id="Longitude" borderAlpha="0.8" />
+				</s:HGroup>
+				
+				<s:TextArea  width="100%" height="100%" editable="false" id="description" borderAlpha="0.8" doubleClickEnabled="true" imeMode="true" />
+				
+				<s:HGroup>
+					<s:CheckBox id="Dropbox" label="Dropbox" color="#FFFFFF" />
+					<s:CheckBox id="Servers" label="Servers" color="#FFFFFF" />
+					<s:CheckBox id="ptop" label="P2P" color="#FFFFFF" />
+				</s:HGroup>
+			</s:VGroup>
+			<s:VGroup width="100%" height="50%" gap="0">
+				<s:Group id="ShowVisualContents" width="100%" height="100%" />
+			</s:VGroup>
+			
+			
+		</s:VGroup>
+	</s:BorderContainer>
+</s:Group>

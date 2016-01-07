@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx" layout="absolute" title="{title}"
+				 close="closePopup(event)" creationComplete="cp();" showCloseButton="true" width="800" height="600">
+	<fx:Declarations>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import mx.collections.XMLListCollection;
+			import mx.events.CloseEvent;
+			import mx.managers.PopUpManager;
+			
+			import spark.effects.AddAction;
+			
+			import fe.core.setup.FEDatabase;
+			import fe.core.setup.FEDirectory;
+			
+			import flashx.textLayout.events.DamageEvent;
+			
+			[Bindable] protected var Title:String;
+			[Bindable] protected var TabId:String;
+			[Bindable] protected var TabLabel:String;
+			[Bindable] protected var TreeFile:String;
+			[Bindable] protected var CurrentFolder:XML = new XML();
+			[Bindable] protected var CurrentIndex:int;
+			[Bindable] protected var SelectedTreeData:XMLListCollection;
+			[Bindable] protected var OldTree:XML;
+			[Bindable] protected var TargetedTree:XMLListCollection;
+			[Bindable] protected var SelectedFileName:String;
+			[Bindable] protected var SelectedFileLabel:String;
+			protected var SaveFileName:String;
+			[Bindable] protected var tmp_file_label:String;
+			[Bindable] protected var fid:int;
+			
+			public var Directory:FEDirectory = new FEDirectory();
+			public var Database:FEDatabase = new FEDatabase;
+			
+			private var TZ:Number = 0;
+			
+			private function cp():void{
+				
+				TZ = Number(Directory.Timezone) * 60 * 60 * 1000;
+				
+				TabId = this.data.selectedTabId;
+				TabLabel = this.data.selectedTabLabel;
+				TreeFile = this.data.selectedTreeFile;
+				CurrentFolder = XML(this.data.selectedFolder);
+				CurrentIndex = this.data.selectedIdx;
+				
+				Title = "This Memo will be added into the " + CurrentFolder.@label + " Folder in the " + TabLabel;
+				
+				if(this.data.withFile){
+					SaveFileName = this.data.selectedFileName;
+					file_label.text = this.data.selectedFileLabel;
+					tmp_file_label = this.data.selectedFileLabel;
+					fid = this.data.selectedFileId;
+					
+					var OpenFile:File = new File(Directory.RefDataDirectory + "/" + SaveFileName);
+					if(OpenFile.exists){
+						var stream:FileStream = new FileStream();
+						stream.open(OpenFile,FileMode.READ);
+						Main.text = stream.readUTFBytes(stream.bytesAvailable);
+						stream.close();
+					}
+					Database = new FEDatabase();
+					Database.stmt.sqlConnection = Database.ConnectFileDB;
+					Database.stmt.text = "SELECT file_id, file_name, date FROM FWData WHERE file_id = " + fid + ";";
+					Database.stmt.execute();
+					trace(Database.stmt.text);
+					
+					var rlt:SQLResult = new SQLResult();
+					rlt = Database.stmt.getResult();
+					var GetDate:Date = new Date(Number(rlt.data[0].date) - TZ);
+					dateChanged(new Date(GetDate));
+					hh.text = String(GetDate.getHours());
+					mm.text = String(GetDate.getMinutes());
+					ss.text = String(GetDate.getSeconds());
+					
+					
+				}else{
+					var CurrentDate:Date = new Date();
+					var Match:RegExp = new RegExp("^[0-9]$");
+					var month:String = (CurrentDate.getMonth()+1).toString();
+					var date:String = (CurrentDate.getDate()).toString();
+					var hour:String = (CurrentDate.getHours()).toString();
+					var min:String = (CurrentDate.getMinutes()).toString();
+					var sec:String = (CurrentDate.getSeconds()).toString();
+					
+					if((CurrentDate.getMonth()+1).toString().match(Match)){ month = '0' + (CurrentDate.getMonth()+1).toString(); }
+					if((CurrentDate.getDate()).toString().match(Match)){ date = '0' + (CurrentDate.getDate()).toString(); }
+					if((CurrentDate.getHours()).toString().match(Match)){ hour = '0' + (CurrentDate.getHours()).toString(); }
+					if((CurrentDate.getMinutes()).toString().match(Match)){ min = '0' + (CurrentDate.getMinutes()).toString(); }
+					if((CurrentDate.getSeconds()).toString().match(Match)){ sec = '0' + (CurrentDate.getSeconds()).toString(); }
+					
+					SaveFileName = "Memo_" + CurrentDate.getFullYear().toString() + month + date + hour + min + sec + ".txt";
+					dateChanged(new Date(CurrentDate));
+					hh.text = hour;
+					mm.text = min;
+					ss.text = sec;
+				}
+				
+			}
+			
+			private function save():void{
+				
+				//var SaveDate:Date = new Date();
+				trace(InputDate.text);
+
+				var SplitDate:Array = InputDate.text.split("/");
+				var SaveDate:Date = new Date(int(SplitDate[2]),int(SplitDate[0]) - 1, int(SplitDate[1]), int(hh.text), int(mm.text), int(ss.text));
+				trace(SplitDate[0],SplitDate[1],SplitDate[2]);
+				SaveDate = new Date(SaveDate.time + TZ);
+				
+				// 新しい時間で緯度経度を取得する
+				var minimum:Number = (new Date(SaveDate).time) - 30000;
+				var max:Number = (new Date(SaveDate).time) + 30000;
+				
+				Database = new FEDatabase();
+				Database.stmt.sqlConnection = Database.ConnectGPSDB;
+				Database.stmt.text = "SELECT id,date,Latitude,Longitude FROM GPSLog WHERE date >= " + minimum + " AND date <= " + max + " ORDER BY date;";
+				trace(Database.stmt.text);
+				Database.stmt.execute();
+				var result:SQLResult = Database.stmt.getResult();
+				var count:int;
+				var newLat:String = new String();
+				var newLon:String = new String();
+				
+				var PosFlag:Boolean = false;
+				if(result.data != null){
+					if(result.data.length > 2){
+						count = (result.data.length / 2) - 1;
+						newLat = result.data[count].Latitude;
+						newLon = result.data[count].Longitude;
+					}else{
+						count = 0;
+						newLat = result.data[count].Latitude;
+						newLon = result.data[count].Longitude;
+					}
+					PosFlag = true;
+				}else{
+					newLat = "34";
+					newLon = "137";
+					PosFlag = false;
+				}
+				
+				Database = new FEDatabase();
+				Database.stmt.sqlConnection = Database.ConnectFileDB;
+				if(file_label.text != "" && Main.text != ""){
+					var SaveFile:File = new File(Directory.RefDataDirectory + "/" + SaveFileName);
+					if(!SaveFile.exists){
+						
+						Database.stmt.text = "INSERT INTO FWData (file_name,file_path,folder_id,tab_id,date,file_label,Latitude,Longitude)" + 
+							" VALUES ('" + StringReplace(SaveFileName) + "','" + StringReplace(SaveFile.nativePath) + "'," + CurrentFolder.@id + "," +
+							TabId + "," + SaveDate.time + ",'" + StringReplace(file_label.text) + "','" + newLat + "','" + newLon + "');";
+						trace(Database.stmt.text);
+						Database.stmt.execute();
+						
+					}else{
+						// if(file_label.text != tmp_file_label){
+						
+						Database.stmt.text = "UPDATE FWData SET file_label = '" + file_label.text + "', date = " + SaveDate.time + ", Latitude = '" + newLat + "', Longitude = '" + newLon + "' WHERE file_id = " + fid + ";";
+						trace(Database.stmt.text);
+						Database.stmt.execute();
+						tmp_file_label = file_label.text;
+						
+						// }
+					}
+					
+					var readStream:FileStream = new FileStream();
+					readStream.open(SaveFile,FileMode.WRITE);
+					readStream.writeUTFBytes(Main.text);
+					readStream.close();
+					
+					var Match:RegExp = new RegExp("^[0-9]$");
+					var month:String = (SaveDate.getMonth()+1).toString();
+					var date:String = (SaveDate.getDate()).toString();
+					var hour:String = (SaveDate.getHours()).toString();
+					var min:String = (SaveDate.getMinutes()).toString();
+					var sec:String = (SaveDate.getSeconds()).toString();
+					
+					if((SaveDate.getMonth()+1).toString().match(Match)){ month = '0' + (SaveDate.getMonth()+1).toString(); }
+					if((SaveDate.getDate()).toString().match(Match)){ date = '0' + (SaveDate.getDate()).toString(); }
+					if((SaveDate.getHours()).toString().match(Match)){ hour = '0' + (SaveDate.getHours()).toString(); }
+					if((SaveDate.getMinutes()).toString().match(Match)){ min = '0' + (SaveDate.getMinutes()).toString(); }
+					if((SaveDate.getSeconds()).toString().match(Match)){ sec = '0' + (SaveDate.getSeconds()).toString(); }					
+					
+					Mes.text = "The Memo was saved into " + SaveFileName + " on " + SaveDate.getFullYear() + "." + month + "." + date + " " + hour + ":" + min + ":" + sec + " ";
+					
+				}
+				
+				
+			}
+			
+			
+			// Xボタンを押してポップアップをクローズ
+			private function closePopup(e:CloseEvent):void{
+				save();
+				
+				PopUpManager.removePopUp(this);
+			}
+			
+			private function commitClose():void{
+				save();
+				var e:CloseEvent = new CloseEvent(CloseEvent.CLOSE, false, false);
+				dispatchEvent(e);
+			}
+			
+			private function StringReplace(ReplaceChar:String):String{
+				
+				var NewChar:String = ReplaceChar.replace(/'/g, "''");
+				
+				return NewChar;
+			}
+			
+			
+			private function dateChanged(date:Date):void{
+				if(date == null){
+					InputDate.text = "";
+				}else{
+					InputDate.text = (date.getMonth()+1).toString()
+						+ '/' + date.getDate() + '/' + date.getFullYear().toString();
+				}       
+			}
+			
+			public function DateToString(date:Date):String{
+				
+				var Match:RegExp = new RegExp("^[0-9]$");
+				var NewConvertDate:String;
+				var NewMonth:String = (date.getMonth()+1).toString();
+				var NewDate:String = (date.getDate()).toString();
+				var NewHour:String = (date.getHours()).toString();
+				var NewMinutes:String = (date.getMinutes()).toString();
+				var NewSecond:String = (date.getSeconds()).toString();
+				
+				//var NewMonth:String = date.getFullYear().toString() + '/0' + (date.getMonth()+1).toString() + '/0' + date.getDate();
+				
+				if((date.getMonth()+1).toString().match(Match)){
+					
+					NewMonth = '0' + (date.getMonth()+1).toString();
+					
+				}
+				
+				if((date.getDate()).toString().match(Match)){
+					
+					NewDate = '0' + (date.getDate()).toString();
+					
+				}
+				
+				if((date.getHours()).toString().match(Match)){
+					
+					NewHour = '0' + (date.getHours()).toString();
+					
+				}
+				
+				if((date.getMinutes()).toString().match(Match)){
+					
+					NewMinutes = '0' + (date.getMinutes()).toString();
+					
+				}
+				
+				if((date.getSeconds()).toString().match(Match)){
+					
+					NewSecond = '0' + (date.getSeconds()).toString();
+					
+				}
+				
+				NewConvertDate = date.getFullYear().toString() + NewMonth + NewDate + NewHour + NewMinutes + NewSecond;
+				
+				return NewConvertDate;
+			}		
+			
+			
+			
+		]]>
+	</fx:Script>
+	
+	
+	<s:Button x="12" y="6" label="保存する" click="save();"/>
+	<s:TextInput id="file_label" x="10" y="33" width="447" height="20"/>
+	<s:TextArea id="Main" x="10" y="62" width="678" height="396"/>
+	<s:Label id="Mes" x="90" y="6" width="598" verticalAlign="middle"/>
+	<s:TextInput id="hh" x="579" y="33" width="30" height="20" textAlign="center"/>
+	<s:Label x="609" y="33" width="10" height="20" text=":" textAlign="center" verticalAlign="middle"/>
+	<s:TextInput id="mm" x="619" y="33" width="30" height="20" textAlign="center"/>
+	<s:Label x="649" y="33" width="10" height="20" text=":" textAlign="center" verticalAlign="middle"/>
+	<s:TextInput id="ss" x="657" y="33" width="30" height="20" textAlign="center"/>
+	<mx:DateField id="InputDate" x="471" y="33" width="106" height="20"/>
+	
+</mx:TitleWindow>

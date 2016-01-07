@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
+					   xmlns:s="library://ns.adobe.com/flex/spark" 
+					   xmlns:mx="library://ns.adobe.com/flex/mx" width="1200" height="800"
+					    xmlns:components="fe.components.*" creationComplete="onCC();onDropboxCC();"
+						applicationComplete="onAC();" closing="cl();" backgroundColor="#222222">
+	
+	<fx:Declarations>
+		<s:XMLListCollection id="MenuList">
+			<fx:XMLList>
+				<menuitem label="Category">
+					<menuitem label="Add Category" id="1"/>
+					<menuitem label="Update Category" id="2"/>
+					<menuitem label="Delete Category" id="3"/>
+				</menuitem>
+				<menuitem label="Folder">
+					<menuitem label="Add Folder" id="4" />
+					<menuitem label="Delete Folder" id="5"/>
+				</menuitem>
+				<menuitem label="Files">
+					<menuitem label="Create Memo" id="6" />
+					<menuitem label="Delete File" id="7"/>
+				</menuitem>
+				<menuitem label="GPS">
+					<menuitem label="Import GPS LOG" id="8" />
+					<menuitem label="Import GPX1.1" id="9" />
+					<menuitem label="Put Maker on the Map" id="10" />
+				</menuitem>
+				<menuitem label="Networks">
+					<menuitem label="Setup Dropbox Connection" id="11" />
+					<menuitem label="Setup Internet Server Connection" id="12" />
+					<menuitem label="Setup P2P Connection" id="13" />
+				</menuitem>
+			</fx:XMLList>
+		</s:XMLListCollection>
+	</fx:Declarations>
+	
+	
+	<fx:Script source="mainscript.as" />
+	<fx:Script source="initialize.as" />
+	<fx:Script source="shortcuts.as" />
+	<fx:Script source="events.as" />
+	<fx:Script source="menubar_control.as" />
+	<fx:Script source="DropboxControl.as" />
+	
+	<s:VGroup id="wrapper" width="100%" height="100%" gap="0">
+		<s:BorderContainer borderVisible="false" contentBackgroundColor="#222222" width="100%" height="20">
+			<mx:MenuBar width="100%" height="20" cornerRadius="0" dataProvider="{MenuList}" labelField="@label"
+						 change="menubar_change(event)" chromeColor="#000000" rollOverColor="#FFFFFF" color="#FFFFFF" id="menus" />	
+		</s:BorderContainer>
+		<s:HGroup id="ContentSpace" width="100%" height="100%" gap="0">
+			<s:VGroup width="25%" height="100%">
+				<components:Codes id="TreeView" width="100%" height="100%" />
+			</s:VGroup>	
+			<s:VGroup width="50%" height="100%" gap="0">
+				<components:Maps width="100%" height="50%" id="SpatialViews" GeoEvent="{GeoLocationChange(event)}" />
+				
+				<components:TimeLine width="100%" id="TemporalViews" />	
+			</s:VGroup>
+			<s:VGroup width="25%" height="100%">
+				<components:Properties width="100%" height="100%" id="DataViews" SETCURRENTLAT="{SpatialViews.CURRENT_LAT}" SETCURRENTLON="{SpatialViews.CURRENT_LON}" />
+			</s:VGroup>
+		</s:HGroup>
+		<components:Console width="100%" height="50" id="consoles" />
+	</s:VGroup>
+</s:WindowedApplication>

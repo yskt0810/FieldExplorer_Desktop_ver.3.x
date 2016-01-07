@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009"
+				xmlns:s="library://ns.adobe.com/flex/spark"
+				xmlns:mx="library://ns.adobe.com/flex/mx"
+				width="700" height="400" close="closePopup(event)" contentBackgroundColor="#FFFFFF"
+				creationComplete="onApplicationComplete();" layout="absolute" textAlign="center"
+				title="セットアップ" showCloseButton="true">
+	<fx:Declarations>
+		<s:RadioButtonGroup id="radiogroup1"/>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import mx.collections.ArrayCollection;
+			import mx.events.CloseEvent;
+			import mx.managers.*;
+			
+			private var targetVolume:File;
+			private var fileList:Array;
+			[Bindable] private var volumeList:ArrayCollection;
+			private var currentVolumeNativePath:String;
+			
+			private var TempFile:File = File.userDirectory.resolvePath("FieldExplorerTemp.xml");
+			[Bindable] private var TimezoneList:ArrayCollection;
+			
+			private function onApplicationComplete():void{
+				
+				TimezoneList = new ArrayCollection([
+					
+					{tz:12, label:"GMT -12:00 Eniwitok, Kwajalein"},
+					{tz:11, label:"GMT -11:00 Midway Islands, Samoa"},
+					{tz:10, label:"GMT -10:00 Hawaii"},
+					{tz:9,  label:"GMT -09:00 Alaska"},
+					{tz:8,  label:"GMT -08:00 Pacific Time (U.S. and Canada), Tijuana"},
+					{tz:7,  label:"GMT -07:00 Mountain Time (U.S. and Canada)"},
+					{tz:6,  label:"GMT -06:00 Central Time (U.S. and Canada), Mexico City"},
+					{tz:5,  label:"GMT -05:00 Eastern Time (U.S. and Canada), Bogota, Lima"},
+					{tz:4,  label:"GMT -04:00 Atlantic Time (Canada), Caracas, La Paz"},
+					{tz:3,  label:"GMT -03:00 Brasilia, Buenos Aires, Georgetown"},
+					{tz:2,  label:"GMT -02:00 Mid-Atlantic"},
+					{tz:1,  label:"GMT -01:00 Azores, Cape Verde Islands"},
+					{tz:0,   label:"GMT  00:00 Greenwich Mean Time .London"},
+					{tz:-1,   label:"GMT +01:00 Berlin, Stockholm, Rome, Vienna, Paris, Madrid"},
+					{tz:-2,   label:"GMT +02:00 Athens, Helsinki, Istanbul, Cairo, Israel"},
+					{tz:-3,   label:"GMT +03:00 Baghdad, Kuwait, Nairobi, Riyadh, Moscow"},
+					{tz:-4,   label:"GMT +04:00 Abu Dhabi, Muscat, Tbilisi, Kazan, Volgograd"},
+					{tz:-5,   label:"GMT +05:00 Islamabad, Karachi, Ekaterinburg, Tashkent"},
+					{tz:-6,   label:"GMT +06:00 Almaty, Dhaka"},
+					{tz:-7,   label:"GMT +07:00 Bangkok, Jakarta, Hanoi"},
+					{tz:-8,   label:"GMT +08:00 Beijing, Hong Kong, Perth, Singapore, Taipei"},
+					{tz:-9,   label:"GMT +09:00 Tokyo, Osaka, Sapporo, Seoul, Yakutsk"},
+					{tz:-10,  label:"GMT +10:00 Brisbane, Canberra, Melbourne, Sydney, Guam"},
+					{tz:-11,  label:"GMT +11:00 Magadan, Solomon Islands, New Caledonia"},
+					{tz:-12,  label:"GMT +12:00 Wellington, Auckland, Fiji Marshall Islands"},
+					
+				]);
+				
+				
+				StorageVolumeInfo.storageVolumeInfo.addEventListener(StorageVolumeChangeEvent.STORAGE_VOLUME_MOUNT, onVolumeMount);
+				StorageVolumeInfo.storageVolumeInfo.addEventListener(StorageVolumeChangeEvent.STORAGE_VOLUME_UNMOUNT,onVolumeUnmount);
+				
+				VolumeRefresh();
+				
+				
+				
+			}
+			
+			private function onVolumeMount(e:StorageVolumeChangeEvent):void{
+				VolumeRefresh();
+			}
+			
+			private function onVolumeUnmount(e:StorageVolumeChangeEvent):void{
+				VolumeRefresh();
+			}
+			
+			private function VolumeRefresh():void{
+				
+				var storageVolumes:Vector.<StorageVolume> = StorageVolumeInfo.storageVolumeInfo.getStorageVolumes();
+				var length:int = storageVolumes.length;
+
+				volumeList = new ArrayCollection();
+				
+				var object:Object;
+				
+				for (var i:int = 0; i < length; i++){
+					object = new Object();
+					// if(storageVolumes[i].isRemovable == true){
+						if(storageVolumes[i].name){
+							object.name = storageVolumes[i].name;
+						}else{
+							object.name=storageVolumes[i].drive;
+						}
+						object.icon = storageVolumes[i].rootDirectory.icon.bitmaps[2];
+						object.nativePath = storageVolumes[i].rootDirectory.nativePath;
+						object.isWritable = storageVolumes[i].isWritable;
+						object.isRemovable = storageVolumes[i].isRemovable;
+						
+						
+						var _ChkDir:File = new File(storageVolumes[i].rootDirectory.nativePath + "/" + "iFields");
+						if(_ChkDir.exists){
+							object.labels = object.name + ": (このストレージには既にデータ保存領域があり、選択するとそれが読み込まれます) ";
+						}else{
+							object.labels = object.name + ": (このストレージにはデータ保存領域が無いので、選択すると新規作成されます) ";
+						}
+						
+						volumeList.addItem(object);						
+
+					// }
+										
+				}
+
+			}
+			
+			private function RadioButtonOnClick():void{
+				
+				if (USBStorage.selected == true){
+					StorageList.enabled = true;
+				} else if (USBStorage.selected == false){
+					StorageList.enabled = false;
+				}
+			}
+			
+			private function SelectVolume():void{
+				
+				if(MyComputer.selected == true || USBStorage.selected == true){
+					if(CurrentTZ.selected == true || SelectTZ.selected == true){
+						if(TempFile.exists){
+							TempFile.deleteFile();
+						}
+						
+						var TempXML:String;
+						var StorageType:int;
+						
+						// ストレージ選択
+						if(MyComputer.selected){
+							StorageType = 1;
+						}else if(USBStorage.selected){
+							StorageType = 2;
+						}
+						
+						// Timezon選択
+						var timezone:int;
+						if(CurrentTZ.selected == true){
+							var CurrentDate:Date = new Date();
+							timezone = int(CurrentDate.timezoneOffset / 60);
+						}else if(SelectTZ.selected == true){
+							timezone = int(TZ_Select.selectedItem.tz);
+						}
+						
+						TempXML = '<root>\n';
+						TempXML += '<Storage>\n';
+						TempXML += '<StorageType>' + StorageType + '</StorageType>\n';
+						
+						var misflg:Boolean;
+						if(USBStorage.selected){
+							if(StorageList.selectedItem != null){
+								TempXML += '<StorageName>' + StorageList.selectedItem.name + '</StorageName>\n';
+								TempXML += '<StorageNativePath>' + StorageList.selectedItem.nativePath + '</StorageNativePath>\n';
+							}else{
+								misflg = true;
+							}
+						}
+						
+						TempXML += '</Storage>\n';
+						TempXML += '<Timezone>' + timezone + '</Timezone>\n';
+						TempXML += '</root>\n';
+						
+						if(misflg == false){
+							var stream:FileStream = new FileStream();
+							stream.open(TempFile,FileMode.WRITE);
+							stream.writeUTFBytes(TempXML);
+							stream.close();
+							
+							commitClose();
+							
+						}else if(misflg == true){
+							ErrorMes.text = "You MUST select which USB Storage you want to use !";
+						}
+						
+					}else if(CurrentTZ.selected == false && SelectTZ.selected == false){
+						ErrorMes.text = "You Must select Timezone that you want to set.";
+					}
+					
+				}else{
+					ErrorMes.text = "You Must select whether you want to use FE Directory in your PC or in your USB Storage !";
+				}
+				
+				
+			}
+						
+			private function closePopup(e:CloseEvent):void{
+				PopUpManager.removePopUp(this);
+			}
+			
+			private function commitClose():void{
+				var e:CloseEvent = new CloseEvent(CloseEvent.CLOSE, false, false);
+				dispatchEvent(e);
+			}
+			
+			
+			protected function SelectTZ_clickHandler(event:MouseEvent):void
+			{
+				// TODO Auto-generated method stub
+				if(SelectTZ.selected == true){
+					TZ_Select.enabled = true;
+				}else if(SelectTZ.selected == false){
+					TZ_Select.enabled = false;
+				}
+			}
+			
+			protected function CurrentTZ_clickHandler(event:MouseEvent):void
+			{
+				// TODO Auto-generated method stub
+				if(CurrentTZ.selected == true){
+					TZ_Select.enabled = false;
+				}else if(CurrentTZ.selected == false){
+					TZ_Select.enabled = true;
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	
+	
+		<s:Label x="49" y="7" width="600" color="#282828" fontSize="18"
+				 text="Select the Storage that your FieldExplorer Data is saved"/>
+		<s:HGroup x="49" y="32" width="600" color="#2D2D2D" contentBackgroundColor="#FFFFFF"
+				  fontSize="10" gap="20" horizontalAlign="center">
+			<s:RadioButton label="on this PC" groupName="radiogroup1" id="MyComputer" click="RadioButtonOnClick();" />
+			<s:RadioButton label="USB Drive (Choose below)" groupName="radiogroup1" id="USBStorage" click="RadioButtonOnClick();" />
+		</s:HGroup>
+		<s:List id="StorageList" x="48" y="57" width="600" height="153" dataProvider="{volumeList}"
+				enabled="false" fontSize="10" labelField="labels" textAlign="left"></s:List>
+		<s:Button x="313" y="337" label="終了" click="SelectVolume();"/>
+	<s:Label x="145" y="218" width="422" fontSize="18" text="Set the Timezone"/>
+	<s:RadioButtonGroup id="radiogroup2"/>
+	<s:HGroup x="48" y="246" width="601" fontSize="10" gap="20" horizontalAlign="center">
+		<s:RadioButton id="CurrentTZ" label="Set Current Timezone"
+					   click="CurrentTZ_clickHandler(event)" groupName="radiogroup2"/>
+		<s:RadioButton id="SelectTZ" label="Choose the Timezone from the List"
+					   click="SelectTZ_clickHandler(event)" groupName="radiogroup2"/>
+	</s:HGroup>
+	<s:DropDownList id="TZ_Select" x="145" y="271" width="422" borderVisible="true"
+					chromeColor="#FFFFFF" dataProvider="{TimezoneList}" dropShadowVisible="false"
+					enabled="false" fontSize="10"></s:DropDownList>
+	<s:Label id="ErrorMes" x="48" y="300" width="601" height="29" color="#FF0000" fontSize="10"
+			 textAlign="left"/>
+	
+</mx:TitleWindow>

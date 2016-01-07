@@ -1,0 +1,45 @@
+	<menuitem label="Category">
+		<menuitem label="Add New Category" id="AddTab"/>
+		<menuitem label="Change Category Name" id="RenameTab"/>
+		<menuitem label="Delete Category" id="DeleteTab"/>
+	</menuitem>
+	<menuitem label="Folder">
+		<menuitem label="Add New Folder" id="AddFolder" />
+			<menuitem label="Change Folder Name" id="RenameFolder" />
+			<menuitem label="Delete Folder" id="DeleteFolder"/>
+			<menuitem label="Edit Folder Tree Structure (Alt + l)" id="ChangeFolderLocations" />
+		</menuitem>
+		<menuitem label="Files">
+			<menuitem label="Add New Files" id="AddFiles"/>
+			<menuitem label="Edit File Information (Ctrl + e)" id="EditFileInfo"/>
+			<menuitem label="Delete File (Ctrl + r)" id="DeleteFiles"/>
+		</menuitem>
+		<menuitem label="Proposals and Results">
+			<menuitem label="Add">
+			<menuitem label="Add Proposals" id="AddProposal"/>
+			<menuitem label="Add Results" id="AddResult" />
+		</menuitem>
+		<menuitem label="Edit">
+			<menuitem label="Edit Proposals" id="EditProposal"/>
+			<menuitem label="Edit Results" id="EditResult" />
+		</menuitem>
+		<menuitem label="Delete">
+			<menuitem label="Delete Proposals" id="DeleteProposal" />
+			<menuitem label="Delete Result" id="DeleteResult" />
+		</menuitem>
+	</menuitem>
+	<menuitem label="Data">
+		<menuitem label="GPS">
+			<menuitem label="Import GPS LOG (NMEA0183) (Ctrl + g)" id="ImportGPSLOG" />
+			<menuitem label="Import GPX1.1 (Ctrl + x)" id="ImportGPX" />
+		</menuitem>
+		<menuitem label="Field Notes">
+			<menuitem label="Create New Notes (Ctrl + m)" id="NewMemo" />
+		</menuitem>
+	</menuitem>
+	<menuitem label="System">
+		<menuitem label="Change Current Timezone" id="TimezoneSet" />
+		<menuitem label="Change Storage" id="ChangeStorage" />
+		<menuitem label="Get Location Name of GPS Log" id="GetUnknowPlace" />
+		<menuitem label="Select Storagies" id="StorageSelect" />
+	</menuitem>

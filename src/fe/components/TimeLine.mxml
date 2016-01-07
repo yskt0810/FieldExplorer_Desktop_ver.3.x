@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx"
+		  xmlns:flexlib="http://code.google.com/p/flexlib/"
+		   creationComplete="onCC();" xmlns:scheduling="flexlib.scheduling.*" >
+	<fx:Declarations>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.events.CalendarLayoutChangeEvent;
+			import mx.events.ScrollEvent;
+			import mx.events.ScrollEventDirection;
+			
+			import fe.core.setup.FEDatabase;
+			
+			import flexlib.scheduling.samples.ScheduleData;
+			import flexlib.scheduling.samples.SetData;
+			import flexlib.scheduling.scheduleClasses.IScheduleEntry;
+			import flexlib.scheduling.scheduleClasses.SimpleScheduleEntry;
+			import flexlib.scheduling.scheduleClasses.TimeIndicatorItem;
+			import flexlib.scheduling.scheduleClasses.renderers.ColoredSolidScheduleEntryRenderer;
+			import flexlib.scheduling.util.DateUtil;
+			
+			
+			[Bindable] public var dataProvider:ArrayCollection;
+			[Bindable] public var startDate:Date;
+			[Bindable] public var endDate:Date;
+			[Bindable] public var timelineStartDate:Date;
+			[Bindable] public var timelineEndDate:Date;
+			[Bindable] public var zoom:Number;
+			[Bindable] public var scheduleViewerWidth:Number;
+			[Bindable] public var scheduleViewerHeight:Number;
+			[Bindable] public var SelectedDate:Number;
+			
+			[Bindable] public var TZ:Number;
+			
+			[Bindable] public var FILE_ID:int;
+			[Bindable] public var FOLDER_ID:int;
+			[Bindable] public var TAB_ID:int;
+			[Bindable] public var FILE_PATH:String;
+			[Bindable] public var FILE_LABEL:String;
+			
+			public var SELECT_FILE_ID:int;
+			
+			[Bindable] public var dataCollections:ArrayCollection;
+			
+			private var db:FEDatabase;
+			
+			
+			private function onCC():void{
+				
+				dataCollections = new ArrayCollection();
+				setDefaultTimeframe();
+				initDataProvider();
+				initTimeIndicators();
+				
+				SELECT_FILE_ID = 0;
+				
+			}
+			
+			
+			private function setDefaultTimeframe():void{
+				
+				
+				var Today:Date = new Date();
+				trace(Today.getTimezoneOffset());
+				timelineStartDate = DateUtil.clearTime(new Date(Today.time - (DateUtil.DAY_IN_MILLISECONDS * 2) + Today.getTimezoneOffset()));
+				timelineEndDate = new Date(Today.time + (DateUtil.DAY_IN_MILLISECONDS * 2) + Today.getTimezoneOffset());
+				
+			}
+			
+			private function getEndDate(startDate:Date):Date{
+				var Today:Date = new Date();
+				var duration:Number = DateUtil.DAY_IN_MILLISECONDS * 2;
+				var endDate:Date = new Date(startDate.getTime() + duration);
+				return endDate;
+			}
+			
+			private function initDataProvider():void{
+				//dataProvider = new ScheduleData().createRandomColoredScheduleEntries(25);
+				
+				dataProvider = new SetData().createFEEntries(dataCollections);
+			}
+			
+			private function initTimeIndicators():void{
+				
+				var result:ArrayCollection = new ArrayCollection();
+				
+				scheduleViewer.timeIndicators = result;
+				
+			}
+			
+						
+			private function createTimeIndicator(hour:Number, color:uint, thickness:Number, alpha:Number):TimeIndicatorItem{
+				var timeIndicatorItem:TimeIndicatorItem = new TimeIndicatorItem();
+				timeIndicatorItem.date = DateUtil.setTime(new Date(), DateUtil.HOUR_IN_MILLISECONDS * hour);
+				timeIndicatorItem.color = color;
+				timeIndicatorItem.thickness = thickness;
+				timeIndicatorItem.alpha = alpha;
+				
+				
+				return timeIndicatorItem;
+				
+			}
+			
+			private function onZoom(value:Number):void{
+				zoom = value;
+			}
+			
+			private function onScrollTimeline(position:Number):void{
+				scheduleViewer.xPosition = position;
+			}
+			
+			private function onScrollScheduleViewer(event:ScrollEvent):void{
+				if(event.direction == ScrollEventDirection.HORIZONTAL){
+					timeline.xPosition = event.position;
+				}
+			}
+			
+			
+
+			
+			public function onChangeDate(date:Date):void
+			{
+				// TODO Auto-generated method stub
+				if(date < new Date()){
+					timelineStartDate = date;
+					UpdateDataWithDateChoose(date);
+					
+				}
+			}
+			
+			public function UpdateDataWithEntryClick(current:ArrayCollection):void{
+				
+				dataCollections = new ArrayCollection();
+				
+				var res:ArrayCollection = current;
+				var i:int = res.length - 1;
+				var ck:int = res.length - 1;
+				
+				var min:Number = 0.0;
+				var max:Number = 0.0;
+				trace(i);
+				while(i>-1){
+					
+					var items:Object = new Object();
+					var tmp_number:Number = new Date(res[i].date).getTime() - TZ;
+					
+					items.file_id = res[i].file_id;
+					items.file_name = res[i].file_name;
+					items.file_path = res[i].file_path;
+					items.file_label = res[i].file_label;
+					items.date = new Date(tmp_number);
+					
+					if(SELECT_FILE_ID == res[i].file_id){
+						items.selectflag = 1;
+						
+					}else{
+						items.selectflag = 0;
+					}
+					
+					
+					if(i==ck){
+						
+						min = tmp_number;
+						max = tmp_number;
+					}else if( tmp_number < min){
+						min = tmp_number;
+					}else if( tmp_number > max){
+						max = tmp_number;
+					}
+					
+					timelineStartDate = new Date(min - (DateUtil.HOUR_IN_MILLISECONDS / 4));
+					timelineEndDate = new Date(max + (DateUtil.HOUR_IN_MILLISECONDS / 4));
+					
+					dataCollections.addItem(items);
+					
+					i = i - 1;
+					//trace(i);
+					//trace(max,min);
+					
+					
+				}
+				
+				dataProvider = new SetData().createFEEntries(dataCollections);
+				select.selectedDate = timelineStartDate;
+				SELECT_FILE_ID = 0;
+				
+			}
+			
+			public function UpdateDataWithFolderChange(folder_id:int, tab_id:int):void{
+				
+				db = new FEDatabase();
+				
+				db.stmt.sqlConnection = db.ConnectFileDB;
+				db.stmt.addEventListener(SQLEvent.RESULT,setData);
+				db.stmt.text = "SELECT file_id,file_name,file_path,file_label,date FROM FWData WHERE folder_id = "
+					+ folder_id + " AND tab_id = " + tab_id + " ORDER BY date;";
+				db.stmt.execute();
+				
+			}
+			
+			public function UpdateDataWithDateChoose(date:Date):void{
+				
+				db = new FEDatabase();
+				db.stmt.sqlConnection = db.ConnectFileDB;
+				db.stmt.addEventListener(SQLEvent.RESULT,setData);
+				db.stmt.text = "SELECT file_id,file_name,file_path,file_label,date FROM FWData WHERE date >= " + Number(date.time) +
+					" AND date <= " + Number(date.time + DateUtil.DAY_IN_MILLISECONDS) + " ORDER BY date;";
+				db.stmt.execute();
+				
+			}
+			
+			private function setData(evt:SQLEvent):void{
+				
+				dataCollections = new ArrayCollection();
+				
+				var res:ArrayCollection = new ArrayCollection(db.stmt.getResult().data);
+				for(var i:int = 0; i<res.length; i++){
+					var items:Object = new Object();
+					
+					var tmp_milsec:Number = new Date(res[i].date).getTime() - TZ;
+					items.file_id = res[i].file_id;
+					items.file_name = res[i].file_name;
+					items.file_path = res[i].file_path;
+					items.file_label = res[i].file_label;
+					items.date = new Date(tmp_milsec);
+					
+					if(SELECT_FILE_ID == res[i].file_id){
+						items.selectflag = 1;
+						
+					}else{
+						items.selectflag = 0;
+					}
+					
+					if(i==0){
+						timelineStartDate = new Date(res[i].date - (DateUtil.HOUR_IN_MILLISECONDS / 4) - TZ);
+					}
+
+					if(i== (res.length - 1)){
+						timelineEndDate = new Date(res[i].date + (DateUtil.HOUR_IN_MILLISECONDS / 4) - TZ);
+						
+					}
+					
+					dataCollections.addItem(items);
+				}
+				
+				dataProvider = new SetData().createFEEntries(dataCollections);
+				select.selectedDate = timelineStartDate;
+				SELECT_FILE_ID = 0;
+			}
+			
+			public function setDataFromGPSLog(GPSFileList:ArrayCollection):void{
+				
+				dataCollections = new ArrayCollection();
+				
+				var res:ArrayCollection = new ArrayCollection();
+				res = GPSFileList;
+				for(var i:int = 0; i<res.length; i++){
+					var items:Object = new Object();
+					
+					var tmp_milsec:Number = new Date(res[i].date).getTime() - TZ;
+					items.file_id = res[i].file_id;
+					items.file_name = res[i].file_name;
+					items.file_path = res[i].file_path;
+					items.file_label = res[i].file_label;
+					items.date = new Date(tmp_milsec);
+					
+					if(SELECT_FILE_ID == res[i].file_id){
+						items.selectflag = 1;
+						
+					}else{
+						items.selectflag = 0;
+					}
+					
+					if(i==0){
+						timelineStartDate = new Date(res[i].date - (DateUtil.HOUR_IN_MILLISECONDS / 4) - TZ);
+					}
+					
+					if(i== (res.length - 1)){
+						timelineEndDate = new Date(res[i].date + (DateUtil.HOUR_IN_MILLISECONDS / 4) - TZ);
+						
+					}
+					
+					dataCollections.addItem(items);
+				}
+				
+				dataProvider = new SetData().createFEEntries(dataCollections);
+				select.selectedDate = timelineStartDate;
+				SELECT_FILE_ID = 0;
+			}
+			
+			
+			public function gotoSelectedEntry(entry:IScheduleEntry):void{
+				if(entry != null){
+					scheduleViewer.moveToEntry(entry);
+				}
+			}
+			
+			
+		]]>
+	</fx:Script>
+			
+		<s:VGroup gap="0" horizontalAlign="center" width="100%" height="100%">
+			
+			<scheduling:Timeline borderVisible="false" id="timeline" color="#FFFFFF" width="{scheduleViewerWidth}" height="35" startDate="{ timelineStartDate}" endDate="{ timelineEndDate}" zoom="{ zoom}" scroll="onScrollTimeline(event.position);" contentBackgroundColor="#222222" chromeColor="#222222" />
+			<scheduling:ScheduleViewer borderVisible="false" borderColor="#333333" id="scheduleViewer" width="{scheduleViewerWidth}" height="{scheduleViewerHeight}" dataProvider="{dataProvider}" 
+									   startDate="{timelineStartDate}" endDate="{timelineEndDate}" zoom="{zoom}" horizontalScrollPolicy="off" entryRenderer="flexlib.scheduling.scheduleClasses.renderers.ColoredSolidScheduleEntryRenderer"
+									   pixelScroll="onScrollScheduleViewer(event);" contentBackgroundColor="#222222" chromeColor="#000000" />
+			<s:BorderContainer backgroundColor="#222222" width="100%" height="25" borderVisible="false" borderColor="#333333" >
+				<s:HGroup id="TimelineTool" width="100%" height="25" paddingTop="0" horizontalAlign="left" gap="0" verticalAlign="middle">
+					<s:Spacer width="25" height="25" />
+					<mx:DateField id="select" width="120" height="25" chromeColor="#222222" contentBackgroundColor="#222222" color="0x66FFFF" />
+					<s:Spacer width="100%" height="25" />
+					<s:HSlider chromeColor="0x222222" id="zoomSlider" minimum="0" maximum="1000" value="120" snapInterval="1" liveDragging="true" change="onZoom(zoomSlider.value);" width="150" height="25" />
+					<s:Spacer width="25" height="25" />
+				</s:HGroup>
+			</s:BorderContainer>
+		</s:VGroup>	
+	
+</s:Group>

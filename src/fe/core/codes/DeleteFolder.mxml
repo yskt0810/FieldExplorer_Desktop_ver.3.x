@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx" layout="absolute" width="300" height="200"
+				 showCloseButton="true" close="closePopup(event)" creationComplete="onCC();">
+	<fx:Declarations>
+		<!-- 非ビジュアルエレメント (サービス、値オブジェクトなど) をここに配置 -->
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import mx.collections.XMLListCollection;
+			import mx.events.CloseEvent;
+			import mx.managers.PopUpManager;
+			
+			import fe.core.setup.FEDatabase;
+			import fe.core.setup.FEDirectory;
+			import fe.core.utils.ReadXMLFile;
+			import fe.core.utils.WriteXMLFile;
+			
+			private var Directory:FEDirectory = new FEDirectory();
+			private var Database:FEDatabase = new FEDatabase();
+			
+			private function onCC():void{
+				 Name.text = this.data.folder_name;
+				 ErrorMes.text = "Note: The files linekd with this foloders will also be deleted.";
+			}
+			
+			
+			public function Delete():void{
+				
+				var ReadXML:ReadXMLFile = new ReadXMLFile();
+				var UpdateTreeFile:File = new File(Directory.RefConfigDirectory + "/" + this.data.tree_file);
+				var CurrentTree:XML = new XML();
+				CurrentTree = ReadXML.ReadMethod(UpdateTreeFile);
+				
+				var DelNode:XML = this.data.TargetFolder;
+				
+				if(int(DelNode.@id) == 0){
+					ErrorMes.text = "You Cannot Delete the Root Folder of the Category";
+					return;
+				}
+				
+				var children:XMLList = XMLList(DelNode.parent()).children();
+				
+				var flag:int = 0;
+				var del_id:int;
+				var length:int = children.length();
+				var filelist:Array;
+				var count:int;
+				var file_check:String;
+				var RemoveFile:File;
+				var result:SQLResult;
+				
+				for(var i:int = 0; i<length; i++){
+					
+					if(int(children[i].@id) == int(DelNode.@id)){
+						
+						for each(var tmp:XML in DelNode.descendants()){
+							
+							del_id = int(tmp.@id);
+							
+							Database = new FEDatabase();
+							Database.stmt.sqlConnection = Database.ConnectFileDB;
+							Database.stmt.text = "SELECT file_name FROM FWData WHERE folder_id = " + del_id
+								+ " and tab_id = " + this.data.tab_id + ";";
+							Database.stmt.execute();
+							
+							result = new SQLResult();
+							result = Database.stmt.getResult();
+							
+							filelist = new Array();
+							
+							if(result.data != null){
+								for(var j:int = 0; j<result.data.length; j++){
+									
+									filelist.push(result.data[j].file_name);
+									
+								}
+								
+								Database.stmt.text = "DELETE from FWData WHERE folder_id = " + del_id 
+									+ " and tab_id = " + this.data.tab_id + ";";
+								Database.stmt.execute();
+								
+								for each(file_check in filelist){
+									Database = new FEDatabase();
+									Database.stmt.sqlConnection = Database.ConnectFileDB;
+									Database.stmt.text = "SELECT count(file_id) as File_count FROM FWData " + 
+										"WHERE file_name = '" + file_check + "';";
+									Database.stmt.execute();
+									
+									result = new SQLResult();
+									result = Database.stmt.getResult();
+									count = result.data[0].File_count;
+									if(count == 0){
+										RemoveFile = new File(Directory.RefDataDirectory + "/" + file_check);
+										if(RemoveFile.exists){
+											RemoveFile.deleteFile();
+										}
+									}
+								}
+							}
+							
+						
+							// 子フォルダと関連づけられたファイルの情報をDBから削除
+							Database.stmt.text = "DELETE from Folder WHERE folder_id = " + del_id
+								+ " and tab_id = " + this.data.tab_id + ";";
+							trace(Database.stmt.text);
+							Database.stmt.execute();
+							
+						}
+						
+						del_id = int(DelNode.@id);
+						
+						Database = new FEDatabase();
+						Database.stmt.sqlConnection = Database.ConnectFileDB;
+						Database.stmt.text = "SELECT file_name FROM FWData WHERE folder_id = " + del_id
+							+ " AND tab_id = " + this.data.tab_id + ";";
+						
+						Database.stmt.execute();
+						
+						result = new SQLResult();
+						result = Database.stmt.getResult();
+						
+						filelist = new Array();
+						
+						Database.stmt.text = "DELETE from Folder WHERE folder_id = " + del_id + " and tab_id =" + this.data.tab_id + ";";
+						Database.stmt.execute();
+						
+						Database.stmt.text = "DELETE from FWData WHERE folder_id = " + del_id + " and tab_id =" + this.data.tab_id + ";";
+						Database.stmt.execute();
+						
+						
+						for each (file_check in filelist){
+							Database = new FEDatabase();
+							Database.stmt.text = "SELECT count(file_id) as File_count FROM FWData WHERE file_name = '" + file_check + "';";
+							Database.stmt.execute();
+							result = new SQLResult();
+							result = Database.stmt.getResult();
+							count = result.data[0].File_count;
+							if(count == 0){
+								RemoveFile = new File(Directory.RefDataDirectory + "/" + file_check);
+								if(RemoveFile.exists){
+									RemoveFile.deleteFile();									
+								}
+							}
+						}
+						
+						delete children[i];
+						
+						flag = 1;
+						
+					}
+					
+					if(flag == 1){ break; }
+				}
+				
+				var WriteXML:WriteXMLFile = new WriteXMLFile();
+				var UpdateString:String = '<root>\n';
+				var SelectedTreeData:XMLListCollection = new XMLListCollection(this.data.Tree.node);
+				
+				if(String(SelectedTreeData) != ""){
+					UpdateString += XMLList(SelectedTreeData).toString();
+				}else{
+					Database.stmt.text = "SELECT tab_name FROM Tab WHERE tab_id = " + this.data.tab_id + ";";
+					Database.stmt.execute();
+					var TabName:String = Database.stmt.getResult().data[0].tab_name;
+					
+					UpdateString += '<node id="0" tab_id="' +this.data.tab_id + '" label="' + TabName + '">\n' + '</node>';
+				}
+				
+				UpdateString += '</root> \n';
+				UpdateString = UpdateString.replace(/\n/g,File.lineEnding);
+				
+				WriteXML.WriteMethod(UpdateString,UpdateTreeFile);
+				
+				commitClose();
+				
+			}
+			
+			private function closePopup(e:CloseEvent):void{
+				PopUpManager.removePopUp(this);
+			}
+			
+			private function commitClose():void{
+				var e:CloseEvent = new CloseEvent(CloseEvent.CLOSE,false,false);
+				dispatchEvent(e);
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:Group width="100%" height="100%" >
+		<s:Label width="100%" height="25" x="0" y="20" text="Delete Folders" fontSize="14" textAlign="center" />
+		<s:TextInput width="250" x="20" y="50" height="25" id="Name" editable="false" />
+		<s:Button width="100" x="100" y="80" height="25" label="Delete" click="Delete();" />
+		<s:Label id="ErrorMes" width="100%" height="25" x="0" y="120" color="0xFF0000" textAlign="center" />
+	</s:Group>
+</mx:TitleWindow>
